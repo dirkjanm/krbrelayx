@@ -138,7 +138,7 @@ def get_kerberos_loot(token, options):
     plainText = newCipher.decrypt(sessionKey, 11, str(cipherText))
 
     authenticator = decoder.decode(plainText, asn1Spec=Authenticator())[0]
-    print authenticator
+    # print authenticator
 
     # The checksum may contain the delegated ticket
     cksum = authenticator['cksum']
@@ -164,7 +164,7 @@ def get_kerberos_loot(token, options):
     dlen = struct.unpack('<H', str(cksum['checksum'])[26:28])[0]
     deldata = str(cksum['checksum'])[28:28+dlen]
     creds = decoder.decode(deldata, asn1Spec=KRB_CRED())[0]
-    print creds
+    # print creds
     subkey = Key(authenticator['subkey']['keytype'], str(authenticator['subkey']['keyvalue']))
     newCipher = _enctype_table[int(creds['enc-part']['etype'])]
 
@@ -172,7 +172,7 @@ def get_kerberos_loot(token, options):
     # print plainText
     # Now we got the EncKrbCredPart
     enc_part = decoder.decode(plainText, asn1Spec=EncKrbCredPart())[0]
-    print enc_part
+    # print enc_part
 
     for i, tinfo in enumerate(enc_part['ticket-info']):
         # This is what we are after :)
