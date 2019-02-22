@@ -26,11 +26,11 @@
 ####################
 import sys
 import argparse
-import ldapdomaindump
-import random
-import string
 import getpass
 import re
+import socket
+from struct import unpack, pack
+from impacket.structure import Structure
 from ldap3 import NTLM, Server, Connection, ALL, LEVEL, BASE, MODIFY_DELETE, MODIFY_ADD, MODIFY_REPLACE
 import ldap3
 from impacket.ldap import ldaptypes
@@ -46,9 +46,7 @@ def print_o(string):
 def print_f(string):
     sys.stderr.write('\033[91m[!]\033[0m %s\n' % (string))
 
-from struct import unpack, pack
-from impacket.structure import Structure
-import socket
+
 
 class DNS_RECORD(Structure):
     """
@@ -68,7 +66,7 @@ class DNS_RECORD(Structure):
         ('Data', ':')
     )
 
-# Note that depending on whether we use RPC or LDAP all the DNS_RPC_XXXX 
+# Note that depending on whether we use RPC or LDAP all the DNS_RPC_XXXX
 # structures use DNS_RPC_NAME when communication is over RPC,
 # but DNS_COUNT_NAME is the way they are stored in LDAP.
 #
@@ -119,7 +117,7 @@ class DNS_RPC_NODE(Structure):
     """
     structure = (
         ('wLength', '>H'),
-        ('wRecordCount', '>H'), 
+        ('wRecordCount', '>H'),
         ('dwFlags', '>L'),
         ('dwChildCount', '>L'),
         ('dnsNodeName', ':')
@@ -283,9 +281,9 @@ def print_record(record, ts=False):
         print(' - Serial: %d' %  record_data['dwSerialNo'])
         print(' - Refresh: %d' %  record_data['dwRefresh'])
         print(' - Retry: %d' %  record_data['dwRetry'])
-        print(' - Expire: %d' %  record_data['dwExpire'])  
-        print(' - Minimum TTL: %d' %  record_data['dwMinimumTtl'])  
-        print(' - Primary server: %s' %  record_data['namePrimaryServer'].toFqdn())        
+        print(' - Expire: %d' %  record_data['dwExpire'])
+        print(' - Minimum TTL: %d' %  record_data['dwMinimumTtl'])
+        print(' - Primary server: %s' %  record_data['namePrimaryServer'].toFqdn())
         print(' - Zone admin email: %s' %  record_data['zoneAdminEmail'].toFqdn())
 
 def new_record(rtype, serial):
@@ -330,8 +328,8 @@ def main():
 
     recordopts = parser.add_argument_group("Record options")
     recordopts.add_argument("-r", "--record", type=str, metavar='TARGETRECORD', help="Record to target (FQDN)")
-    recordopts.add_argument("-a", 
-                        "--action", 
+    recordopts.add_argument("-a",
+                        "--action",
                         choices=['add', 'modify', 'query', 'remove', 'ldapdelete'],
                         default='query',
                         help="Action to perform. Options: add (add a new record), modify ("
@@ -417,7 +415,7 @@ def main():
         print_f('Target record not found!')
         return
 
-    
+
     if args.action == 'query':
         print_o('Found record %s' % targetentry['attributes']['name'])
         for record in targetentry['raw_attributes']['dnsRecord']:

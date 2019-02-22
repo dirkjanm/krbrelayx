@@ -41,14 +41,13 @@ import argparse
 import sys
 import binascii
 import logging
-from threading import Thread
 
-from impacket import version
 from impacket.examples import logger
 from impacket.examples.ntlmrelayx.attacks import PROTOCOL_ATTACKS
+from impacket.examples.ntlmrelayx.utils.targetsutils import TargetsProcessor, TargetsFileWatcher
+
 from lib.servers import SMBRelayServer, HTTPKrbRelayServer
 from lib.utils.config import KrbRelayxConfig
-from lib.utils.targetsutils import TargetsProcessor, TargetsFileWatcher
 
 RELAY_SERVERS = ( SMBRelayServer, HTTPKrbRelayServer )
 
@@ -175,10 +174,10 @@ def main():
     ldapoptions.add_argument('--escalate-user', action='store', required=False, help='Escalate privileges of this user instead of creating a new one')
 
     try:
-       options = parser.parse_args()
+        options = parser.parse_args()
     except Exception as e:
-       logging.error(str(e))
-       sys.exit(1)
+        logging.error(str(e))
+        sys.exit(1)
 
     if options.debug is True:
         logging.getLogger().setLevel(logging.DEBUG)
