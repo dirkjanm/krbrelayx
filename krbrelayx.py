@@ -76,11 +76,7 @@ def main():
             c.setMode(mode)
             c.setAttacks(PROTOCOL_ATTACKS)
             c.setLootdir(options.lootdir)
-            try:
-                c.setLDAPOptions(options.no_dump, options.no_da, options.no_acl, options.escalate_user)
-            except TypeError:
-                # Newer version of ntlmrelayx has extra arguments
-                c.setLDAPOptions(options.no_dump, options.no_da, options.no_acl, options.no_validate_privs, options.escalate_user)
+            c.setLDAPOptions(options.no_dump, options.no_da, options.no_acl, options.no_validate_privs, options.escalate_user, options.add_computer, options.delegate_access)
             c.setIPv6(options.ipv6)
             c.setWpadOptions(options.wpad_host, options.wpad_auth_num)
             c.setSMB2Support(not options.no_smb2support)
@@ -172,6 +168,8 @@ def main():
     ldapoptions.add_argument('--no-acl', action='store_false', required=False, help='Disable ACL attacks')
     ldapoptions.add_argument('--no-validate-privs', action='store_false', required=False, help='Do not attempt to enumerate privileges, assume permissions are granted to escalate a user via ACL attacks')
     ldapoptions.add_argument('--escalate-user', action='store', required=False, help='Escalate privileges of this user instead of creating a new one')
+    ldapoptions.add_argument('--add-computer', action='store_true', required=False, help='Attempt to add a new computer account')
+    ldapoptions.add_argument('--delegate-access', action='store_true', required=False, help='Delegate access on relayed computer account to the specified account')
 
     try:
         options = parser.parse_args()

@@ -18,6 +18,24 @@ class KrbRelayxConfig(NTLMRelayxConfig):
         # Krb options
         self.format = 'ccache'
 
+        # LDAP options
+        self.dumpdomain = True
+        self.addda = True
+        self.aclattack = True
+        self.validateprivs = True
+        self.escalateuser = None
+        self.addcomputer = False
+        self.delegateaccess = False
+
+    def setLDAPOptions(self, dumpdomain, addda, aclattack, validateprivs, escalateuser, addcomputer, delegateaccess):
+        self.dumpdomain = dumpdomain
+        self.addda = addda
+        self.aclattack = aclattack
+        self.validateprivs = validateprivs
+        self.escalateuser = escalateuser
+        self.addcomputer = addcomputer
+        self.delegateaccess = delegateaccess
+
     def setAuthOptions(self, aeskey, hashes, dcip, password, salt, israwpassword=False):
         self.dcip = dcip
         self.aeskey = aeskey
