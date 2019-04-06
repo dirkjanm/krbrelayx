@@ -366,6 +366,7 @@ def main():
         sys.exit(1)
     print_o('Bind OK')
     domainroot = s.info.other['defaultNamingContext'][0]
+    forestroot = s.info.other['rootDomainNamingContext'][0]
     if args.forest:
         dnsroot = 'CN=MicrosoftDNS,DC=ForestDnsZones,%s' % domainroot
     else:
@@ -377,9 +378,8 @@ def main():
             print_m('Found %d domain DNS zones:' % len(zones))
             for zone in zones:
                 print('    %s' % zone)
-        # TODO: Should this be the root domain?
-        forestroot = 'CN=MicrosoftDNS,DC=ForestDnsZones,%s' % s.info.other['rootDomainNamingContext'][0]
-        zones = get_dns_zones(c, forestroot)
+        forestdns = 'CN=MicrosoftDNS,DC=ForestDnsZones,%s' % s.info.other['rootDomainNamingContext'][0]
+        zones = get_dns_zones(c, forestdns)
         if len(zones) > 0:
             print_m('Found %d forest DNS zones:' % len(zones))
             for zone in zones:
@@ -393,8 +393,13 @@ def main():
         # Default to current domain
         zone = ldap2domain(domainroot)
 
+    if not target:
+        print_f('You need to specify a target record')
+        return
+
     if target.lower().endswith(zone.lower()):
         target = target[:-(len(zone)+1)]
+
 
     searchtarget = 'DC=%s,%s' % (zone, dnsroot)
     # print s.info.naming_contexts
@@ -445,7 +450,8 @@ def main():
             print_operation_result(c.result)
         else:
             node_data = {
-                'objectCategory': 'CN=Dns-Node,CN=Schema,CN=Configuration,%s' % domainroot,
+                # Schema is in the root domain
+                'objectCategory': 'CN=Dns-Node,CN=Schema,CN=Configuration,%s' % forestroot,
                 'dNSTombstoned': False,
                 'name': target
             }
