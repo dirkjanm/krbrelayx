@@ -103,8 +103,8 @@ class DNS_COUNT_NAME(Structure):
         ind = 0
         labels = []
         for i in range(self['LabelCount']):
-            nextlen = unpack('B', self['RawName'][ind])[0]
-            labels.append(self['RawName'][ind+1:ind+1+nextlen])
+            nextlen = unpack('B', self['RawName'][ind:ind+1])[0]
+            labels.append(self['RawName'][ind+1:ind+1+nextlen].decode('utf-8'))
             ind += nextlen + 1
         # For the final dot
         labels.append('')
@@ -368,7 +368,7 @@ def main():
     domainroot = s.info.other['defaultNamingContext'][0]
     forestroot = s.info.other['rootDomainNamingContext'][0]
     if args.forest:
-        dnsroot = 'CN=MicrosoftDNS,DC=ForestDnsZones,%s' % domainroot
+        dnsroot = 'CN=MicrosoftDNS,DC=ForestDnsZones,%s' % forestroot
     else:
         dnsroot = 'CN=MicrosoftDNS,DC=DomainDnsZones,%s' % domainroot
 
@@ -426,7 +426,7 @@ def main():
         for record in targetentry['raw_attributes']['dnsRecord']:
             dr = DNS_RECORD(record)
             # dr.dump()
-            print targetentry['dn']
+            print(targetentry['dn'])
             print_record(dr, targetentry['attributes']['dNSTombstoned'])
             continue
     elif args.action == 'add':
@@ -450,8 +450,8 @@ def main():
             print_operation_result(c.result)
         else:
             node_data = {
-                # Schema is in the root domain
-                'objectCategory': 'CN=Dns-Node,CN=Schema,CN=Configuration,%s' % forestroot,
+                # Schema is in the root domain (take if from schemaNamingContext to be sure)
+                'objectCategory': 'CN=Dns-Node,%s' % s.info.other['schemaNamingContext'][0],
                 'dNSTombstoned': False,
                 'name': target
             }
