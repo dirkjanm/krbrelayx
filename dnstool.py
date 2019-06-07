@@ -323,6 +323,7 @@ def main():
     parser.add_argument("-u","--user",type=str,metavar='USERNAME',help="DOMAIN\\username for authentication.")
     parser.add_argument("-p","--password",type=str,metavar='PASSWORD',help="Password or LM:NTLM hash, will prompt if not specified")
     parser.add_argument("--forest", action='store_true', help="Search the ForestDnsZones instead of DomainDnsZones")
+    parser.add_argument("--legacy", action='store_true', help="Search the System partition (legacy DNS storage)")
     parser.add_argument("--zone", help="Zone to search in (if different than the current domain)")
     parser.add_argument("--print-zones", action='store_true', help="Only query all zones on the DNS server, no other modifications are made")
 
@@ -370,7 +371,10 @@ def main():
     if args.forest:
         dnsroot = 'CN=MicrosoftDNS,DC=ForestDnsZones,%s' % forestroot
     else:
-        dnsroot = 'CN=MicrosoftDNS,DC=DomainDnsZones,%s' % domainroot
+        if args.legacy:
+            dnsroot = 'CN=MicrosoftDNS,CN=System,%s' % domainroot
+        else:
+            dnsroot = 'CN=MicrosoftDNS,DC=DomainDnsZones,%s' % domainroot
 
     if args.print_zones:
         zones = get_dns_zones(c, dnsroot)
