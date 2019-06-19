@@ -331,7 +331,7 @@ def main():
     recordopts.add_argument("-r", "--record", type=str, metavar='TARGETRECORD', help="Record to target (FQDN)")
     recordopts.add_argument("-a",
                         "--action",
-                        choices=['add', 'modify', 'query', 'remove', 'ldapdelete'],
+                        choices=['add', 'modify', 'query', 'remove', 'resurrect', 'ldapdelete'],
                         default='query',
                         help="Action to perform. Options: add (add a new record), modify ("
                              "modify an existing record), query (show existing), remove (mark record "
@@ -515,6 +515,22 @@ def main():
             c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record])],
                                          'dNSTombstoned': [(MODIFY_REPLACE, True)]})
             print_operation_result(c.result)
+    elif args.action == 'resurrect':
+         addtype = 0
+         if len(targetentry['raw_attributes']['dnsRecord']) > 1:
+             print_m('Target has multiple records, I dont  know how to handle this.')
+             return
+         else:
+             print_m('Target has only one record, resurrecting it')
+             diff = datetime.datetime.today() - datetime.datetime(1601,1,1)
+             tstime = int(diff.total_seconds()*10000)
+             # Add a null record
+             record = new_record(addtype, get_next_serial(args.host, zone))
+             record['Data'] = DNS_RPC_RECORD_TS()
+             record['Data']['entombedTime'] = tstime
+             c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record])],
+                                          'dNSTombstoned': [(MODIFY_REPLACE, False)]})
+             print_o('Record resurrected. You will need to (re)add the record with the IP address.')
 
 if __name__ == '__main__':
     main()
