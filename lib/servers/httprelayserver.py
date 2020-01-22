@@ -1,12 +1,15 @@
-import SimpleHTTPServer
-import SocketServer
+try:
+    import SimpleHTTPServer
+    import SocketServer
+except ImportError:
+    import http.server as SimpleHTTPServer
+    import socketserver as SocketServer
 import socket
 import base64
 import random
 import string
 import traceback
 from threading import Thread
-from urlparse import urlparse
 
 from impacket import ntlm, LOG
 from impacket.smbserver import outputToJohnFormat, writeJohnOutputToFile
@@ -34,7 +37,7 @@ class HTTPKrbRelayServer(HTTPRelayServer):
             LOG.info("HTTPD: Received connection from %s, prompting for authentication", client_address[0])
             try:
                 SimpleHTTPServer.SimpleHTTPRequestHandler.__init__(self,request, client_address, server)
-            except Exception, e:
+            except Exception as e:
                 LOG.error(str(e))
                 LOG.debug(traceback.format_exc())
 

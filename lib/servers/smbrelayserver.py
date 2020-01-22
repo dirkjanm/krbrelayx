@@ -13,9 +13,14 @@
 # Description:
 #             This is the SMB server which relays the connections
 #   to other protocols
-
+from __future__ import division
+from __future__ import print_function
+from six import b
 from threading import Thread
-import ConfigParser
+try:
+    import ConfigParser
+except ImportError:
+    import configparser as ConfigParser
 import struct
 import logging
 import time
@@ -127,18 +132,18 @@ class SMBRelayServer(Thread):
             # Let's first parse the packet to see if the client supports SMB2
             SMBCommand = smb.SMBCommand(recvPacket['Data'][0])
 
-            dialects = SMBCommand['Data'].split('\x02')
-            if 'SMB 2.002\x00' in dialects or 'SMB 2.???\x00' in dialects:
+            dialects = SMBCommand['Data'].split(b'\x02')
+            if b'SMB 2.002\x00' in dialects or b'SMB 2.???\x00' in dialects:
                 respSMBCommand['DialectRevision'] = smb3.SMB2_DIALECT_002
                 #respSMBCommand['DialectRevision'] = smb3.SMB2_DIALECT_21
             else:
                 # Client does not support SMB2 fallbacking
-                raise Exception('SMB2 not supported, fallbacking')
+                raise Exception('Client does not support SMB2, fallbacking')
         else:
             respSMBCommand['DialectRevision'] = smb3.SMB2_DIALECT_002
             #respSMBCommand['DialectRevision'] = smb3.SMB2_DIALECT_21
 
-        respSMBCommand['ServerGuid'] = ''.join([random.choice(string.letters) for _ in range(16)])
+        respSMBCommand['ServerGuid'] = b(''.join([random.choice(string.ascii_letters) for _ in range(16)]))
         respSMBCommand['Capabilities'] = 0
         respSMBCommand['MaxTransactSize'] = 65536
         respSMBCommand['MaxReadSize'] = 65536
@@ -179,7 +184,8 @@ class SMBRelayServer(Thread):
         securityBlob = sessionSetupData['Buffer']
 
         rawNTLM = False
-        if struct.unpack('B',securityBlob[0])[0] == ASN1_AID:
+        if struct.unpack('B',securityBlob[0:1])[0] == ASN1_AID:
+
             # negTokenInit packet
             try:
                 blob = decoder.decode(securityBlob, asn1Spec=GSSAPIHeader_SPNEGO_Init())[0]
@@ -191,7 +197,7 @@ class SMBRelayServer(Thread):
                     if str(mechType) != TypesMech['KRB5 - Kerberos 5'] and str(mechType) != \
                                      TypesMech['MS KRB5 - Microsoft Kerberos 5']:
                         # Nope, do we know it?
-                        if MechTypes.has_key(str(mechType)):
+                        if str(mechType) in MechTypes:
                             mechStr = MechTypes[str(mechType)]
                         else:
                             mechStr = mechType
@@ -208,6 +214,7 @@ class SMBRelayServer(Thread):
 
                         return [respSMBCommand], None, STATUS_MORE_PROCESSING_REQUIRED
                     else:
+
                         # This is Kerberos, we can do something with this
                         try:
                             # If you're looking for the magic, it's in lib/utils/kerberos.py
@@ -237,7 +244,7 @@ class SMBRelayServer(Thread):
 
                         # Somehow the function above catches all exceptions and hides them
                         # which is pretty annoying
-                        except Exception, e:
+                        except Exception as e:
                             import traceback
                             traceback.print_exc()
                             raise
@@ -297,7 +304,7 @@ class SMBRelayServer(Thread):
 
             #Init the correct client for our target
             client = self.init_client(extSec)
-        except Exception, e:
+        except Exception as e:
             LOG.error("Connection against target %s://%s FAILED: %s" % (self.target.scheme, self.target.netloc, str(e)))
             self.targetprocessor.logTarget(self.target)
         else:
@@ -356,7 +363,7 @@ class SMBRelayServer(Thread):
                 client = smbData[self.target]['SMBClient']
                 try:
                     challengeMessage = self.do_ntlm_negotiate(client,token)
-                except Exception, e:
+                except Exception as e:
                     # Log this target as processed for this client
                     self.targetprocessor.logTarget(self.target)
                     # Raise exception again to pass it on to the SMB server
@@ -366,7 +373,7 @@ class SMBRelayServer(Thread):
 
                 respToken = SPNEGO_NegTokenResp()
                 # accept-incomplete. We want more data
-                respToken['NegResult'] = '\x01'
+                respToken['NegResult'] = b'\x01'
                 respToken['SupportedMech'] = TypesMech['NTLMSSP - Microsoft NTLM Security Support Provider']
                 respToken['ResponseToken'] = str(challengeMessage)
 
@@ -411,7 +418,7 @@ class SMBRelayServer(Thread):
                     packet['Tid']     = recvPacket['Tid']
                     packet['Mid']     = recvPacket['Mid']
                     packet['Uid']     = recvPacket['Uid']
-                    packet['Data']    = '\x00\x00\x00'
+                    packet['Data']    = b'\x00\x00\x00'
                     packet['ErrorCode']   = errorCode >> 16
                     packet['ErrorClass']  = errorCode & 0xff
 
@@ -451,7 +458,7 @@ class SMBRelayServer(Thread):
 
                 respToken = SPNEGO_NegTokenResp()
                 # accept-completed
-                respToken['NegResult'] = '\x00'
+                respToken['NegResult'] = b'\x00'
 
                 # Status SUCCESS
                 errorCode = STATUS_SUCCESS

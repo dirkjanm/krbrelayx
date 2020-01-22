@@ -101,7 +101,6 @@ def main():
     except IndexError:
         print_f('Target not found!')
         return
-    from impacket.ldap.ldaptypes import SR_SECURITY_DESCRIPTOR
 
     if args.remove:
         operation = ldap3.MODIFY_DELETE
