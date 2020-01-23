@@ -36,7 +36,7 @@ class KrbCredCCache(CCache):
 
         credential['key'] = KeyBlock()
         credential['key']['keytype'] = int(encASRepPart['key']['keytype'])
-        credential['key']['keyvalue'] = str(encASRepPart['key']['keyvalue'])
+        credential['key']['keyvalue'] = bytes(encASRepPart['key']['keyvalue'])
         credential['key']['keylen'] = len(credential['key']['keyvalue'])
 
         credential['time'] = Times()

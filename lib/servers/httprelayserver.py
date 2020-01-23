@@ -41,6 +41,12 @@ class HTTPKrbRelayServer(HTTPRelayServer):
                 LOG.error(str(e))
                 LOG.debug(traceback.format_exc())
 
+        def getheader(self, header):
+            try:
+                return self.headers.getheader(header)
+            except AttributeError:
+                return self.headers.get(header)
+
         def do_GET(self):
             messageType = 0
             if self.server.config.mode == 'REDIRECT':
@@ -65,21 +71,25 @@ class HTTPKrbRelayServer(HTTPRelayServer):
                 proxy = False
 
             # TODO: Handle authentication that isn't complete the first time
-            if (proxy and self.headers.getheader('Proxy-Authorization') is None) or (not proxy and self.headers.getheader('Authorization') is None):
-                self.do_AUTHHEAD(message='Negotiate', proxy=proxy)
+
+            if (proxy and self.getheader('Proxy-Authorization') is None) or (not proxy and self.getheader('Authorization') is None):
+                self.do_AUTHHEAD(message=b'Negotiate', proxy=proxy)
                 return
             else:
                 if proxy:
-                    auth_header = self.headers.getheader('Proxy-Authorization')
+                    auth_header = self.getheader('Proxy-Authorization')
                 else:
-                    auth_header = self.headers.getheader('Authorization')
+                    auth_header = self.getheader('Authorization')
+
                 try:
                     _, blob = auth_header.split('Negotiate')
                     token = base64.b64decode(blob.strip())
                 except:
-                    self.do_AUTHHEAD(message='Negotiate', proxy=proxy)
+                    self.do_AUTHHEAD(message=b'Negotiate', proxy=proxy)
                     return
-
+            if b'NTLMSSP' in token:
+                LOG.info('HTTPD: Client %s is using NTLM authentication instead of Kerberos' % self.client_address[0])
+                return
             # If you're looking for the magic, it's in lib/utils/kerberos.py
             authdata = get_kerberos_loot(token, self.server.config)
 
