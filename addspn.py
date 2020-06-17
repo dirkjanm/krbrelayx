@@ -93,7 +93,7 @@ def main():
         search = '(dnsHostName=%s)' % targetuser
     else:
         search = '(SAMAccountName=%s)' % targetuser
-    c.search(s.info.other['rootDomainNamingContext'][0], search, controls=controls, attributes=['SAMAccountName', 'servicePrincipalName', 'dnsHostName', 'msds-additionaldnshostname'])
+    c.search(s.info.other['defaultNamingContext'][0], search, controls=controls, attributes=['SAMAccountName', 'servicePrincipalName', 'dnsHostName', 'msds-additionaldnshostname'])
 
     try:
         targetobject = c.entries[0]
