@@ -121,7 +121,7 @@ def main():
         except IndexError:
             # Assume this is the hostname
             host = args.spn
-        c.modify(targetobject.entry_dn, {'msds-additionaldnshostname':[(ldap3.MODIFY_ADD, [host])]})
+        c.modify(targetobject.entry_dn, {'msds-additionaldnshostname':[(operation, [host])]})
 
     if c.result['result'] == 0:
         print_o('SPN Modified successfully')
