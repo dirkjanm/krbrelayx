@@ -37,6 +37,7 @@ from impacket.examples.logger import ImpacketFormatter
 from impacket import version
 from impacket.dcerpc.v5 import transport, rprn
 from impacket.dcerpc.v5.dtypes import NULL
+import socket
 
 class PrinterBug(object):
     KNOWN_PROTOCOLS = {
@@ -79,12 +80,34 @@ class PrinterBug(object):
             if logging.getLogger().level == logging.DEBUG:
                 import traceback
                 traceback.print_exc()
+            logging.critical("An unhandled exception has occured. Please open up an issue! Continueing...")
             logging.critical(str(e))
+
+    def ping(self, host, port):
+        # Code stolen from https://github.com/fox-it/BloodHound.py/blob/1124a1b5c6f62fa6c058f7294251c7cb223e3d66/bloodhound/ad/utils.py#L126 and slightly modified by @tacticalDevC
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1.0)
+            s.connect((host, port))
+            s.close()
+            return True
+        except KeyboardInterrupt:
             raise
+        except:
+            return False
 
     def lookup(self, rpctransport, host):
+        if self.ping(host, self.__port) is False:
+            logging.info("Host is offline. Skipping!")
+            return
+        
         dce = rpctransport.get_dce_rpc()
-        dce.connect()
+        try:
+            dce.connect()
+        except Exception as e:
+            # Probably this isn't a Windows machine or SMB is closed
+            logging.error("Timeout - Skipping host!")
+            return
         dce.bind(rprn.MSRPC_UUID_RPRN)
         logging.info('Bind OK')
         try:
@@ -191,7 +214,6 @@ def main():
             lookup.dump(remote_name)
         except KeyboardInterrupt:
             break
-        # except:
 
 
 if __name__ == '__main__':
