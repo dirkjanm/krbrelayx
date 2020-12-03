@@ -97,7 +97,7 @@ def main():
     else:
         targetuser = args.user.split('\\')[1]
 
-    if '.' in targetuser:
+    if computer:
         search = '(dnsHostName=%s)' % targetuser
     else:
         search = '(SAMAccountName=%s)' % targetuser
