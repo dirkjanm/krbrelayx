@@ -54,7 +54,8 @@ def main():
     parser.add_argument("host", metavar='HOSTNAME', help="Hostname/ip or ldap://host:port connection string to connect to")
     parser.add_argument("-u", "--user", metavar='USERNAME', help="DOMAIN\\username for authentication")
     parser.add_argument("-p", "--password", metavar='PASSWORD', help="Password or LM:NTLM hash, will prompt if not specified")
-    parser.add_argument("-t", "--target", metavar='TARGET', help="Computername or username to target (FQDN or COMPUTER$ name, if unspecified user with -u is target)")
+    parser.add_argument("-t", "--targetComputer", metavar='TARGETC', help="Computername to target (FQDN or COMPUTER$ name, if unspecified user with -u is target)")
+    parser.add_argument("-T", "--targetAccount", metavar='TARGETA', help="Username to target (If unspecified user with -u is target)")
     parser.add_argument("-s", "--spn", required=True, metavar='SPN', help="servicePrincipalName to add (for example: http/host.domain.local or cifs/host.domain.local)")
     parser.add_argument("-r", "--remove", action='store_true', help="Remove the SPN instead of add it")
     parser.add_argument("-q", "--query", action='store_true', help="Show the current target SPNs instead of modifying anything")
@@ -84,8 +85,15 @@ def main():
         sys.exit(1)
     print_o('Bind OK')
 
-    if args.target:
-        targetuser = args.target
+    computer = False
+    if args.targetComputer:
+        if args.targetAccount:
+            print_f('Can not use targetComputer and targetAccount at the same time')
+            sys.exit(1)
+        targetuser = args.targetComputer
+        computer = True
+    elif args.targetAccount:
+        targetuser = args.targetAccount
     else:
         targetuser = args.user.split('\\')[1]
 
