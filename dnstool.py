@@ -309,7 +309,8 @@ RECORD_TYPE_MAPPING = {
     2: 'NS',
     5: 'CNAME',
     6: 'SOA',
-    33: 'SRV'
+    33: 'SRV',
+    65281: 'WINS'
 }
 
 def main():
