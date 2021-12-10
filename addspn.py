@@ -55,12 +55,18 @@ def main():
     parser.add_argument("-u", "--user", metavar='USERNAME', help="DOMAIN\\username for authentication")
     parser.add_argument("-p", "--password", metavar='PASSWORD', help="Password or LM:NTLM hash, will prompt if not specified")
     parser.add_argument("-t", "--target", metavar='TARGET', help="Computername or username to target (FQDN or COMPUTER$ name, if unspecified user with -u is target)")
-    parser.add_argument("-s", "--spn", required=True, metavar='SPN', help="servicePrincipalName to add (for example: http/host.domain.local or cifs/host.domain.local)")
+    parser.add_argument("-s", "--spn", metavar='SPN', help="servicePrincipalName to add (for example: http/host.domain.local or cifs/host.domain.local)")
     parser.add_argument("-r", "--remove", action='store_true', help="Remove the SPN instead of add it")
+    parser.add_argument("-c", "--clear", action='store_true', help="Clear, i.e. remove all SPNs")
     parser.add_argument("-q", "--query", action='store_true', help="Show the current target SPNs instead of modifying anything")
     parser.add_argument("-a", "--additional", action='store_true', help="Add the SPN via the msDS-AdditionalDnsHostName attribute")
 
     args = parser.parse_args()
+
+    if not args.query and not args.clear:
+        if not args.spn:
+            parser.error("-s/--spn is required when not querying (-q/--query) or clearing (--clear)")
+
     #Prompt for password if not set
     authentication = None
     if args.user is not None:
@@ -104,6 +110,8 @@ def main():
 
     if args.remove:
         operation = ldap3.MODIFY_DELETE
+    elif args.clear:
+        operation = ldap3.MODIFY_REPLACE
     else:
         operation = ldap3.MODIFY_ADD
 
@@ -114,7 +122,12 @@ def main():
 
 
     if not args.additional:
-        c.modify(targetobject.entry_dn, {'servicePrincipalName':[(operation, [args.spn])]})
+        if args.clear:
+            print_o('Printing object before clearing')
+            print(targetobject)
+            c.modify(targetobject.entry_dn, {'servicePrincipalName':[(operation, [])]})
+        else:
+            c.modify(targetobject.entry_dn, {'servicePrincipalName':[(operation, [args.spn])]})
     else:
         try:
             host = args.spn.split('/')[1]
