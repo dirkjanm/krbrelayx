@@ -190,6 +190,7 @@ class DNS_RPC_RECORD_AAAA(Structure):
     """
     DNS_RPC_RECORD_AAAA
     [MS-DNSP] section 2.2.2.2.4.17
+    [MS-DNSP] section 2.2.2.2.4.17
     """
     structure = (
         ('ipv6Address', '16s'),
@@ -228,7 +229,7 @@ def get_dns_zones(connection, root):
         zones.append(entry['attributes']['dc'])
     return zones
 
-def get_next_serial(server, zone):
+def get_next_serial(server, zone, tcp):
     # Create a resolver object
     dnsresolver = dns.resolver.Resolver()
     # Is our host an IP? In that case make sure the server IP is used
@@ -238,7 +239,7 @@ def get_next_serial(server, zone):
         dnsresolver.nameservers = [server]
     except socket.error:
         pass
-    res = dnsresolver.query(zone, 'SOA')
+    res = dnsresolver.resolve(zone, 'SOA',tcp=tcp)
     for answer in res:
         return answer.serial + 1
 
@@ -327,6 +328,7 @@ def main():
     parser.add_argument("--legacy", action='store_true', help="Search the System partition (legacy DNS storage)")
     parser.add_argument("--zone", help="Zone to search in (if different than the current domain)")
     parser.add_argument("--print-zones", action='store_true', help="Only query all zones on the DNS server, no other modifications are made")
+    parser.add_argument("--tcp", action='store_true', help="use DNS over TCP")
 
     recordopts = parser.add_argument_group("Record options")
     recordopts.add_argument("-r", "--record", type=str, metavar='TARGETRECORD', help="Record to target (FQDN)")
@@ -447,7 +449,7 @@ def main():
                         print_f('Record already exists and points to %s. Use --action modify to overwrite or --allow-multiple to override this' % address.formatCanonical())
                         return False
             # If we are here, no A records exists yet
-            record = new_record(addtype, get_next_serial(args.host, zone))
+            record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
             record['Data'] = DNS_RPC_RECORD_A()
             record['Data'].fromCanonical(args.data)
             print_m('Adding extra record')
@@ -460,7 +462,7 @@ def main():
                 'dNSTombstoned': False,
                 'name': target
             }
-            record = new_record(addtype, get_next_serial(args.host, zone))
+            record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
             record['Data'] = DNS_RPC_RECORD_A()
             record['Data'].fromCanonical(args.data)
             record_dn = 'DC=%s,%s' % (target, searchtarget)
@@ -482,7 +484,7 @@ def main():
                 records.append(record)
         if not targetrecord:
             print_f('No A record exists yet. Use --action add to add it')
-        targetrecord['Serial'] = get_next_serial(args.host, zone)
+        targetrecord['Serial'] = get_next_serial(args.host, zone,args.tcp)
         targetrecord['Data'] = DNS_RPC_RECORD_A()
         targetrecord['Data'].fromCanonical(args.data)
         records.append(targetrecord.getData())
@@ -510,7 +512,7 @@ def main():
             diff = datetime.datetime.today() - datetime.datetime(1601,1,1)
             tstime = int(diff.total_seconds()*10000)
             # Add a null record
-            record = new_record(addtype, get_next_serial(args.host, zone))
+            record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
             record['Data'] = DNS_RPC_RECORD_TS()
             record['Data']['entombedTime'] = tstime
             c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record])],
@@ -526,7 +528,7 @@ def main():
              diff = datetime.datetime.today() - datetime.datetime(1601,1,1)
              tstime = int(diff.total_seconds()*10000)
              # Add a null record
-             record = new_record(addtype, get_next_serial(args.host, zone))
+             record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
              record['Data'] = DNS_RPC_RECORD_TS()
              record['Data']['entombedTime'] = tstime
              c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record])],
