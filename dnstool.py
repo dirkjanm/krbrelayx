@@ -515,9 +515,13 @@ def main():
             record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
             record['Data'] = DNS_RPC_RECORD_TS()
             record['Data']['entombedTime'] = tstime
-            c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record])],
+            c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record.getData()])],
                                          'dNSTombstoned': [(MODIFY_REPLACE, True)]})
             print_operation_result(c.result)
+    elif args.action == 'ldapdelete':
+        print_m('Deleting record over LDAP')
+        c.delete(targetentry['dn'])
+        print_operation_result(c.result)
     elif args.action == 'resurrect':
          addtype = 0
          if len(targetentry['raw_attributes']['dnsRecord']) > 1:
@@ -531,7 +535,7 @@ def main():
              record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
              record['Data'] = DNS_RPC_RECORD_TS()
              record['Data']['entombedTime'] = tstime
-             c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record])],
+             c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record.getData()])],
                                           'dNSTombstoned': [(MODIFY_REPLACE, False)]})
              print_o('Record resurrected. You will need to (re)add the record with the IP address.')
 
