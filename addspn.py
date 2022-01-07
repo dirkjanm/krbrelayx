@@ -55,6 +55,7 @@ def main():
     parser.add_argument("-u", "--user", metavar='USERNAME', help="DOMAIN\\username for authentication")
     parser.add_argument("-p", "--password", metavar='PASSWORD', help="Password or LM:NTLM hash, will prompt if not specified")
     parser.add_argument("-t", "--target", metavar='TARGET', help="Computername or username to target (FQDN or COMPUTER$ name, if unspecified user with -u is target)")
+    parser.add_argument("-T", "--target-type", metavar='TARGETTYPE', choices=('samname','hostname','auto'), default='auto', help="Target type (samname or hostname) If unspecified, will assume it's a hostname if there is a . in the name and a SAM name otherwise.")
     parser.add_argument("-s", "--spn", metavar='SPN', help="servicePrincipalName to add (for example: http/host.domain.local or cifs/host.domain.local)")
     parser.add_argument("-r", "--remove", action='store_true', help="Remove the SPN instead of add it")
     parser.add_argument("-c", "--clear", action='store_true', help="Clear, i.e. remove all SPNs")
@@ -95,7 +96,9 @@ def main():
     else:
         targetuser = args.user.split('\\')[1]
 
-    if '.' in targetuser:
+    if ('.' in targetuser and args.target_type != 'samname') or args.target_type == 'hostname':
+        if args.target_type == 'auto':
+            print_m('Assuming target is a hostname. If this is incorrect use --target-type samname')
         search = '(dnsHostName=%s)' % targetuser
     else:
         search = '(SAMAccountName=%s)' % targetuser
