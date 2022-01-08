@@ -423,7 +423,7 @@ def main():
         return
 
     # Check if we need the target record to exists, and if yes if it does
-    if args.action in ['modify', 'remove', 'delete', 'query'] and not targetentry:
+    if args.action in ['modify', 'remove', 'ldapdelete', 'resurrect', 'query'] and not targetentry:
         print_f('Target record not found!')
         return
 
