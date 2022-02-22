@@ -1,10 +1,10 @@
-# Krbrelayx - Unconstrained delegation abuse toolkit
+# Krbrelayx - Kerberos relaying and unconstrained delegation abuse toolkit
 
-Toolkit for abusing unconstrained delegation.
-Requires [impacket](https://github.com/SecureAuthCorp/impacket) and [ldap3](https://github.com/cannatag/ldap3) to function.
+Toolkit for abusing Kerberos.
+Requires [impacket](https://github.com/SecureAuthCorp/impacket), [ldap3](https://github.com/cannatag/ldap3) and dnspython to function.
 It is recommended to install impacket from git directly to have the latest version available.
 
-More info about this toolkit available in my blog <https://dirkjanm.io/krbrelayx-unconstrained-delegation-abuse-toolkit/>
+More info about this toolkit available in my blog <https://dirkjanm.io/krbrelayx-unconstrained-delegation-abuse-toolkit/>. Information about Kerberos relaying in the follow-up blog <https://dirkjanm.io/relaying-kerberos-over-dns-with-krbrelayx-and-mitm6/>.
 
 # Tools included
 ## addspn.py
@@ -112,55 +112,44 @@ authentication:
 ```
 
 ## krbrelayx.py
-Given an account with unconstrained delegation privileges, dump Kerberos TGT's of users connecting to hosts similar to ntlmrelayx.
+This tool has multiple use options:
+
+* **Kerberos relaying**: When no credentials are supplied, but at least one target is specified, krbrelayx will forward the Kerberos authentication to a matching target hostname, effectively relaying the authentication. How to get incoming Kerberos auth with a valid SPN is up to you, but you could use mitm6 for this.
+* **Unconstrained delegation abuse**: In this mode, krbrelayx will either decrypt and dump incoming TGTs embedded in authentication with unconstrained delegation, or immediately use the TGTs to authenticate to a target service. This requires that credentials for an account with unconstrained delegation are specified.
 
 ```
-usage: krbrelayx.py [-h] [-debug] [-t TARGET] [-tf TARGETSFILE] [-w]
-                    [-ip INTERFACE_IP] [-r SMBSERVER] [-l LOOTDIR]
-                    [-f {ccache,kirbi}] [-codec CODEC] [-no-smb2support]
-                    [-wh WPAD_HOST] [-wa WPAD_AUTH_NUM] [-6] [-p PASSWORD]
-                    [-hp HEXPASSWORD] [-s USERNAME] [-hashes LMHASH:NTHASH]
-                    [-aesKey hex key] [-dc-ip ip address] [-e FILE]
-                    [-c COMMAND] [--enum-local-admins] [--no-dump] [--no-da]
-                    [--no-acl] [--no-validate-privs]
-                    [--escalate-user ESCALATE_USER]
+usage: krbrelayx.py [-h] [-debug] [-t TARGET] [-tf TARGETSFILE] [-w] [-ip INTERFACE_IP] [-r SMBSERVER] [-l LOOTDIR]
+                    [-f {ccache,kirbi}] [-codec CODEC] [-no-smb2support] [-wh WPAD_HOST] [-wa WPAD_AUTH_NUM] [-6] [-p PASSWORD]
+                    [-hp HEXPASSWORD] [-s USERNAME] [-hashes LMHASH:NTHASH] [-aesKey hex key] [-dc-ip ip address] [-e FILE]
+                    [-c COMMAND] [--enum-local-admins] [--no-dump] [--no-da] [--no-acl] [--no-validate-privs]
+                    [--escalate-user ESCALATE_USER] [--add-computer] [--delegate-access] [--adcs] [--template TEMPLATE]
+                    [-v TARGET]
 
-Kerberos "relay" tool. Abuses accounts with unconstrained delegation to pwn
-things.
+Kerberos relay and unconstrained delegation abuse tool. By @_dirkjan / dirkjanm.io
 
 Main options:
   -h, --help            show this help message and exit
   -debug                Turn DEBUG output ON
   -t TARGET, --target TARGET
-                        Target to attack, since this is Kerberos, only
-                        HOSTNAMES are valid. Example: smb://server:445 If
+                        Target to attack, since this is Kerberos, only HOSTNAMES are valid. Example: smb://server:445 If
                         unspecified, will store tickets for later use.
-  -tf TARGETSFILE       File that contains targets by hostname or full URL,
-                        one per line
-  -w                    Watch the target file for changes and update target
-                        list automatically (only valid with -tf)
+  -tf TARGETSFILE       File that contains targets by hostname or full URL, one per line
+  -w                    Watch the target file for changes and update target list automatically (only valid with -tf)
   -ip INTERFACE_IP, --interface-ip INTERFACE_IP
                         IP address of interface to bind SMB and HTTP servers
   -r SMBSERVER          Redirect HTTP requests to a file:// path on SMBSERVER
   -l LOOTDIR, --lootdir LOOTDIR
-                        Loot directory in which gathered loot (TGTs or dumps)
-                        will be stored (default: current directory).
+                        Loot directory in which gathered loot (TGTs or dumps) will be stored (default: current directory).
   -f {ccache,kirbi}, --format {ccache,kirbi}
-                        Format to store tickets in. Valid: ccache (Impacket)
-                        or kirbi (Mimikatz format) default: ccache
-  -codec CODEC          Sets encoding used (codec) from the target's output
-                        (default "ascii"). If errors are detected, run
-                        chcp.com at the target, map the result with
-                        https://docs.python.org/2.4/lib/standard-
-                        encodings.html and then execute ntlmrelayx.py again
-                        with -codec and the corresponding codec
+                        Format to store tickets in. Valid: ccache (Impacket) or kirbi (Mimikatz format) default: ccache
+  -codec CODEC          Sets encoding used (codec) from the target's output (default "utf-8"). If errors are detected, run
+                        chcp.com at the target, map the result with https://docs.python.org/2.4/lib/standard-encodings.html and
+                        then execute ntlmrelayx.py again with -codec and the corresponding codec
   -no-smb2support       Disable SMB2 Support
   -wh WPAD_HOST, --wpad-host WPAD_HOST
-                        Enable serving a WPAD file for Proxy Authentication
-                        attack, setting the proxy host to the one supplied.
+                        Enable serving a WPAD file for Proxy Authentication attack, setting the proxy host to the one supplied.
   -wa WPAD_AUTH_NUM, --wpad-auth-num WPAD_AUTH_NUM
-                        Prompt for authentication N times for clients without
-                        MS16-077 installed before serving a WPAD file.
+                        Prompt for authentication N times for clients without MS16-077 installed before serving a WPAD file.
   -6, --ipv6            Listen on both IPv6 and IPv4
 
 Kerberos Keys (of your account with unconstrained delegation):
@@ -169,37 +158,38 @@ Kerberos Keys (of your account with unconstrained delegation):
   -hp HEXPASSWORD, --krbhexpass HEXPASSWORD
                         Hex-encoded password
   -s USERNAME, --krbsalt USERNAME
-                        Case sensitive (!) salt. Used to calculate Kerberos
-                        keys.Only required if specifying password instead of
-                        keys.
+                        Case sensitive (!) salt. Used to calculate Kerberos keys.Only required if specifying password instead
+                        of keys.
   -hashes LMHASH:NTHASH
                         NTLM hashes, format is LMHASH:NTHASH
-  -aesKey hex key       AES key to use for Kerberos Authentication (128 or 256
-                        bits)
-  -dc-ip ip address     IP Address of the domain controller. If ommited it use
-                        the domain part (FQDN) specified in the target
+  -aesKey hex key       AES key to use for Kerberos Authentication (128 or 256 bits)
+  -dc-ip ip address     IP Address of the domain controller. If ommited it use the domain part (FQDN) specified in the target
                         parameter
 
 SMB attack options:
-  -e FILE               File to execute on the target system. If not
-                        specified, hashes will be dumped (secretsdump.py must
-                        be in the same directory)
-  -c COMMAND            Command to execute on target system. If not specified,
-                        hashes will be dumped (secretsdump.py must be in the
-                        same directory).
-  --enum-local-admins   If relayed user is not admin, attempt SAMR lookup to
-                        see who is (only works pre Win 10 Anniversary)
+  -e FILE               File to execute on the target system. If not specified, hashes will be dumped (secretsdump.py must be
+                        in the same directory)
+  -c COMMAND            Command to execute on target system. If not specified, hashes will be dumped (secretsdump.py must be in
+                        the same directory).
+  --enum-local-admins   If relayed user is not admin, attempt SAMR lookup to see who is (only works pre Win 10 Anniversary)
 
 LDAP attack options:
   --no-dump             Do not attempt to dump LDAP information
   --no-da               Do not attempt to add a Domain Admin
   --no-acl              Disable ACL attacks
-  --no-validate-privs   Do not attempt to enumerate privileges, assume
-                        permissions are granted to escalate a user via ACL
+  --no-validate-privs   Do not attempt to enumerate privileges, assume permissions are granted to escalate a user via ACL
                         attacks
   --escalate-user ESCALATE_USER
-                        Escalate privileges of this user instead of creating a
-                        new one
+                        Escalate privileges of this user instead of creating a new one
+  --add-computer        Attempt to add a new computer account
+  --delegate-access     Delegate access on relayed computer account to the specified account
+
+AD CS attack options:
+  --adcs                Enable AD CS relay attack
+  --template TEMPLATE   AD CS template. Defaults to Machine or User whether relayed account name ends with `$`. Relaying a DC
+                        should require specifying `DomainController`
+  -v TARGET, --victim TARGET
+                        Victim username or computername$, to request the correct certificate name.
 ```
 
 ### TODO:
