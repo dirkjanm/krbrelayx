@@ -27,6 +27,9 @@ class KrbRelayxConfig(NTLMRelayxConfig):
         self.addcomputer = False
         self.delegateaccess = False
 
+        # Custom options
+        self.victim = None
+
     def setLDAPOptions(self, dumpdomain, addda, aclattack, validateprivs, escalateuser, addcomputer, delegateaccess):
         self.dumpdomain = dumpdomain
         self.addda = addda
@@ -44,5 +47,6 @@ class KrbRelayxConfig(NTLMRelayxConfig):
         self.salt = salt
         self.israwpassword = israwpassword
 
-    def setKrbOptions(self, outformat):
+    def setKrbOptions(self, outformat, victim):
         self.format = outformat
+        self.victim = victim
