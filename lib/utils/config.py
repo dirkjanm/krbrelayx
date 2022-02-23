@@ -30,6 +30,20 @@ class KrbRelayxConfig(NTLMRelayxConfig):
         # Custom options
         self.victim = None
 
+    # Make sure we have a fixed version of this to avoid incompatibilities with impacket
+    def setLDAPOptions(self, dumpdomain, addda, aclattack, validateprivs, escalateuser, addcomputer, delegateaccess, dumplaps, dumpgmsa, dumpadcs, sid):
+        self.dumpdomain = dumpdomain
+        self.addda = addda
+        self.aclattack = aclattack
+        self.validateprivs = validateprivs
+        self.escalateuser = escalateuser
+        self.addcomputer = addcomputer
+        self.delegateaccess = delegateaccess
+        self.dumplaps = dumplaps
+        self.dumpgmsa = dumpgmsa
+        self.dumpadcs = dumpadcs
+        self.sid = sid
+
     def setAuthOptions(self, aeskey, hashes, dcip, password, salt, israwpassword=False):
         self.dcip = dcip
         self.aeskey = aeskey
