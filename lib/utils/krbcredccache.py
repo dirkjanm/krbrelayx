@@ -1,5 +1,5 @@
 from impacket.krb5.constants import TicketFlags
-from impacket.krb5.ccache import CCache, Header, Credential, KeyBlock, Times, CountedOctetString, Principal, Ticket
+from impacket.krb5.ccache import CCache, Header, Credential, KeyBlockV4, Times, CountedOctetString, Principal, Ticket
 from impacket.krb5 import types
 from pyasn1.codec.der import encoder
 
@@ -34,7 +34,7 @@ class KrbCredCCache(CCache):
         credential['server'] = tmpServer
         credential['is_skey'] = 0
 
-        credential['key'] = KeyBlock()
+        credential['key'] = KeyBlockV4()
         credential['key']['keytype'] = int(encASRepPart['key']['keytype'])
         credential['key']['keyvalue'] = bytes(encASRepPart['key']['keyvalue'])
         credential['key']['keylen'] = len(credential['key']['keyvalue'])
