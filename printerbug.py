@@ -46,7 +46,8 @@ class PrinterBug(object):
         }
 
     def __init__(self, username='', password='', domain='', port=None,
-                 hashes=None, attackerhost='', ping=True, timeout=1):
+                 hashes=None, attackerhost='', ping=True, timeout=1,
+                 doKerberos=False, dcHost='', targetIp=None):
 
         self.__username = username
         self.__password = password
@@ -57,6 +58,9 @@ class PrinterBug(object):
         self.__attackerhost = attackerhost
         self.__tcp_ping = ping
         self.__tcp_timeout = timeout
+        self.__doKerberos = doKerberos
+        self.__dcHost = dcHost
+        self.__targetIp = targetIp
         if hashes is not None:
             self.__lmhash, self.__nthash = hashes.split(':')
 
@@ -75,6 +79,12 @@ class PrinterBug(object):
         if hasattr(rpctransport, 'set_credentials'):
             # This method exists only for selected protocol sequences.
             rpctransport.set_credentials(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
+        
+        if self.__doKerberos:
+            rpctransport.set_kerberos(True, kdcHost=self.__dcHost)
+        
+        if self.__targetIp:
+            rpctransport.setRemoteHost(self.__targetIp)
 
         try:
             self.lookup(rpctransport, remote_host)
@@ -82,7 +92,7 @@ class PrinterBug(object):
             if logging.getLogger().level == logging.DEBUG:
                 import traceback
                 traceback.print_exc()
-            logging.critical("An unhandled exception has occured. Please open up an issue! Continueing...")
+            logging.critical("An unhandled exception has occured. Please open up an issue! Continuing...")
             logging.critical(str(e))
 
     def ping(self, host):
@@ -187,6 +197,14 @@ def main():
 
     group.add_argument('-hashes', action="store", metavar = "LMHASH:NTHASH", help='NTLM hashes, format is LMHASH:NTHASH')
     group.add_argument('-no-pass', action="store_true", help='don\'t ask for password (useful when proxying through ntlmrelayx)')
+    group.add_argument('-k', action="store_true", help='Use Kerberos authentication. Grabs credentials from ccache file '
+                        '(KRB5CCNAME) based on target parameters. If valid credentials '
+                        'cannot be found, it will use the ones specified in the command '
+                        'line')
+    group.add_argument('-dc-ip', action="store", metavar="ip address", help='IP Address of the domain controller. If omitted it will use the domain part (FQDN) specified in the target parameter')
+    group.add_argument('-target-ip', action='store', metavar="ip address",
+                        help='IP Address of the target machine. If omitted it will use whatever was specified as target. '
+                        'This is useful when target is the NetBIOS name or Kerberos name and you cannot resolve it')
 
     if len(sys.argv)==1:
         parser.print_help()
@@ -210,6 +228,11 @@ def main():
     if domain is None:
         domain = ''
 
+    if options.dc_ip is None:
+        dc_ip = domain
+    else:
+        dc_ip = options.dc_ip
+
     if password == '' and username != '' and options.hashes is None and options.no_pass is False:
         from getpass import getpass
         password = getpass("Password:")
@@ -222,7 +245,7 @@ def main():
     else:
         remote_names.append(remote_name)
 
-    lookup = PrinterBug(username, password, domain, int(options.port), options.hashes, options.attackerhost, options.no_ping, float(options.timeout))
+    lookup = PrinterBug(username, password, domain, int(options.port), options.hashes, options.attackerhost, options.no_ping, float(options.timeout), options.k, dc_ip, options.target_ip)
     for remote_name in remote_names:
 
         try:
