@@ -172,7 +172,8 @@ SMB attack options:
   -c COMMAND            Command to execute on target system. If not specified, hashes will be dumped (secretsdump.py must be in
                         the same directory).
   --enum-local-admins   If relayed user is not admin, attempt SAMR lookup to see who is (only works pre Win 10 Anniversary)
-
+  --sniff               Sniff the SMB data instead of setting up a server
+  
 LDAP attack options:
   --no-dump             Do not attempt to dump LDAP information
   --no-da               Do not attempt to add a Domain Admin

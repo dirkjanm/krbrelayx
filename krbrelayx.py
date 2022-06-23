@@ -46,10 +46,11 @@ from impacket.examples import logger
 from impacket.examples.ntlmrelayx.attacks import PROTOCOL_ATTACKS
 from impacket.examples.ntlmrelayx.utils.targetsutils import TargetsProcessor, TargetsFileWatcher
 
-from lib.servers import SMBRelayServer, HTTPKrbRelayServer, DNSRelayServer
+from lib.servers import SMBRelayServer, HTTPKrbRelayServer, DNSRelayServer, SMBSniffer
 from lib.utils.config import KrbRelayxConfig
 
-RELAY_SERVERS = ( SMBRelayServer, HTTPKrbRelayServer, DNSRelayServer )
+RELAY_SERVERS = [HTTPKrbRelayServer, DNSRelayServer]
+
 
 def stop_servers(threads):
     todelete = []
@@ -85,7 +86,7 @@ def main():
                 c.setAuthOptions(options.aesKey, options.hashes, options.dc_ip, binascii.unhexlify(options.krbhexpass), options.krbsalt, True)
             else:
                 c.setAuthOptions(options.aesKey, options.hashes, options.dc_ip, options.krbpass, options.krbsalt, False)
-            c.setKrbOptions(options.format, options.victim)
+            c.setKrbOptions(options.format, options.victim, options.sniff)
             c.setIsADCSAttack(options.adcs)
             c.setADCSOptions(options.template)
 
@@ -161,6 +162,8 @@ def main():
                         'target system. If not specified, hashes will be dumped (secretsdump.py must be in the same '
                                                           'directory).')
     smboptions.add_argument('--enum-local-admins', action='store_true', required=False, help='If relayed user is not admin, attempt SAMR lookup to see who is (only works pre Win 10 Anniversary)')
+    smboptions.add_argument('--sniff', action='store', required=False,
+                            help='Sniff the SMB data instead of setting up a server')
 
     #LDAP options
     ldapoptions = parser.add_argument_group("LDAP attack options")
@@ -187,6 +190,22 @@ def main():
     except Exception as e:
         logging.error(str(e))
         sys.exit(1)
+    except SystemExit as e:
+
+        # Since the default error of '--sniff requires a value' isn't descriptive enough, 'overwrite' it
+        # and print the interfaces
+        if '--sniff' in sys.argv:
+
+            # Check if there's a number after the sniff
+            index = sys.argv.index('--sniff')
+            index += 1
+            if index == len(sys.argv) or not sys.argv[index].isnumeric():
+                print('Please enter a valid interface index after --sniff')
+                from scapy.interfaces import show_interfaces
+                show_interfaces()
+                sys.exit(1)
+        logging.error(str(e))
+        sys.exit(1)
 
     if options.debug is True:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -195,10 +214,20 @@ def main():
         logging.getLogger().setLevel(logging.INFO)
         logging.getLogger('impacket.smbserver').setLevel(logging.ERROR)
 
+    # Ensure the index given in --sniff is valid
+    if options.sniff:
+        from scapy.interfaces import dev_from_index
+        try:
+            dev_from_index(options.sniff)
+        except ValueError:
+            print('Please enter a valid interface index after --sniff')
+            from scapy.interfaces import show_interfaces
+            show_interfaces()
+            sys.exit(1)
+
     # Let's register the protocol clients we have
     # ToDo: Do this better somehow
     from lib.clients import PROTOCOL_CLIENTS
-
 
     if options.codec is not None:
         codec = options.codec
@@ -237,7 +266,10 @@ def main():
         watchthread.start()
 
     threads = set()
-
+    if options.sniff:
+        RELAY_SERVERS.append(SMBSniffer)
+    else:
+        RELAY_SERVERS.append(SMBRelayServer)
     c = start_servers(options, threads)
 
     print("")
@@ -253,7 +285,6 @@ def main():
         del s
 
     sys.exit(0)
-
 
 
 # Process command-line arguments.
