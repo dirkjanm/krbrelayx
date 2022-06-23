@@ -29,6 +29,7 @@ class KrbRelayxConfig(NTLMRelayxConfig):
 
         # Custom options
         self.victim = None
+        self.sniff = None
 
     # Make sure we have a fixed version of this to avoid incompatibilities with impacket
     def setLDAPOptions(self, dumpdomain, addda, aclattack, validateprivs, escalateuser, addcomputer, delegateaccess, dumplaps, dumpgmsa, dumpadcs, sid):
@@ -52,6 +53,7 @@ class KrbRelayxConfig(NTLMRelayxConfig):
         self.salt = salt
         self.israwpassword = israwpassword
 
-    def setKrbOptions(self, outformat, victim):
+    def setKrbOptions(self, outformat, victim, sniff):
         self.format = outformat
         self.victim = victim
+        self.sniff = sniff
