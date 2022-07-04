@@ -50,7 +50,9 @@ class HTTPRelayClient(ProtocolClient):
             self.path = '/'
         else:
             self.path = self.target.path
+        return self.doInitialActions(authdata, kdc)
 
+    def doInitialActions(self, authdata, kdc=None)
         self.session.request('GET', self.path)
         res = self.session.getresponse()
         res.read()
@@ -109,7 +111,7 @@ class HTTPSRelayClient(HTTPRelayClient):
     def __init__(self, serverConfig, target, targetPort = 443, extendedSecurity=True ):
         HTTPRelayClient.__init__(self, serverConfig, target, targetPort, extendedSecurity)
 
-    def initConnection(self):
+    def initConnection(self, authdata, kdc=None):
         self.lastresult = None
         if self.target.path == '':
             self.path = '/'
@@ -120,4 +122,5 @@ class HTTPSRelayClient(HTTPRelayClient):
             self.session = HTTPSConnection(self.targetHost,self.targetPort, context=uv_context)
         except AttributeError:
             self.session = HTTPSConnection(self.targetHost,self.targetPort)
-        return True
+        return self.doInitialActions(authdata, kdc)
+
