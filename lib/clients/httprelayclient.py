@@ -52,7 +52,7 @@ class HTTPRelayClient(ProtocolClient):
             self.path = self.target.path
         return self.doInitialActions(authdata, kdc)
 
-    def doInitialActions(self, authdata, kdc=None)
+    def doInitialActions(self, authdata, kdc=None):
         self.session.request('GET', self.path)
         res = self.session.getresponse()
         res.read()
