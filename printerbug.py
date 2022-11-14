@@ -92,7 +92,7 @@ class PrinterBug(object):
             if logging.getLogger().level == logging.DEBUG:
                 import traceback
                 traceback.print_exc()
-            logging.critical("An unhandled exception has occured. Please open up an issue! Continuing...")
+            logging.critical("An unhandled exception has occured. Trying next host:")
             logging.critical(str(e))
 
     def ping(self, host):
@@ -114,12 +114,7 @@ class PrinterBug(object):
             return
         
         dce = rpctransport.get_dce_rpc()
-        try:
-            dce.connect()
-        except Exception as e:
-            # Probably this isn't a Windows machine or SMB is closed
-            logging.error("Timeout - Skipping host!")
-            return
+        dce.connect()
         dce.bind(rprn.MSRPC_UUID_RPRN)
         logging.info('Bind OK')
         try:
