@@ -108,7 +108,13 @@ authentication:
                         NTLM hashes, format is LMHASH:NTHASH
   -no-pass              don't ask for password (useful when proxying through
                         ntlmrelayx)
-
+  -k                    Use Kerberos authentication. Grabs credentials from ccache file (KRB5CCNAME) based on target parameters.
+                        If valid credentials cannot be found, it will use the ones specified in the command line
+  -dc-ip ip address     IP Address of the domain controller. If omitted it will use the domain part (FQDN) specified in the target
+                        parameter
+  -target-ip ip address
+                        IP Address of the target machine. If omitted it will use whatever was specified as target. This is useful
+                        when target is the NetBIOS name or Kerberos name and you cannot resolve it
 ```
 
 ## krbrelayx.py
