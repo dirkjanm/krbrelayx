@@ -271,12 +271,16 @@ def ldap_kerberos_auth(ldapconnection, authdata_gssapi):
         ldapconnection.refresh_server_info()
     return response['result'] == 0
 
-def build_apreq(domain, kdc, tgt, username, serviceclass, hostname):
+def build_apreq(domain, kdc, tgt, username, serviceclass, hostname, tgs=None):
     # Build a protocol agnostic AP-REQ using the TGT we have, wrapped in GSSAPI/SPNEGO
     username = Principal(username, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
     servername = Principal('%s/%s' % (serviceclass, hostname), type=constants.PrincipalNameType.NT_SRV_INST.value)
-    tgs, cipher, _, sessionkey = getKerberosTGS(servername, domain, kdc,
-                                                            tgt['KDC_REP'], tgt['cipher'], tgt['sessionKey'])
+    if tgs:
+        # If the TGS is already supplied, use that instead of TGT
+        tgs, cipher, _, sessionkey = tgs
+    else:
+        tgs, cipher, _, sessionkey = getKerberosTGS(servername, domain, kdc,
+                                                    tgt['KDC_REP'], tgt['cipher'], tgt['sessionKey'])
 
     # Let's build a NegTokenInit with a Kerberos AP_REQ
     blob = SPNEGO_NegTokenInit()
@@ -322,8 +326,8 @@ def build_apreq(domain, kdc, tgt, username, serviceclass, hostname):
     blob['MechToken'] = encoder.encode(apReq)
     return blob.getData()
 
-def ldap_kerberos(domain, kdc, tgt, username, ldapconnection, hostname):
-    gssapi_data = build_apreq(domain, kdc, tgt, username, 'ldap', hostname)
+def ldap_kerberos(domain, kdc, tgt, username, ldapconnection, hostname, tgs=None):
+    gssapi_data = build_apreq(domain, kdc, tgt, username, 'ldap', hostname, tgs)
 
     return ldap_kerberos_auth(ldapconnection, gssapi_data)
 

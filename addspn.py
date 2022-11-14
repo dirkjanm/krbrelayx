@@ -31,7 +31,13 @@ import ldapdomaindump
 import random
 import string
 import getpass
-from ldap3 import NTLM, Server, Connection, ALL
+import os
+from impacket.krb5.ccache import CCache
+from impacket.krb5.kerberosv5 import getKerberosTGT, getKerberosTGS
+from impacket.krb5.types import Principal
+from impacket.krb5 import constants
+from ldap3 import NTLM, Server, Connection, ALL, LEVEL, BASE, MODIFY_DELETE, MODIFY_ADD, MODIFY_REPLACE, SASL, KERBEROS
+from lib.utils.kerberos import ldap_kerberos
 import ldap3
 from ldap3.protocol.microsoft import security_descriptor_control
 
@@ -50,7 +56,6 @@ def main():
     parser._positionals.title = "Required options"
 
     #Main parameters
-    #maingroup = parser.add_argument_group("Main options")
     parser.add_argument("host", metavar='HOSTNAME', help="Hostname/ip or ldap://host:port connection string to connect to")
     parser.add_argument("-u", "--user", metavar='USERNAME', help="DOMAIN\\username for authentication")
     parser.add_argument("-p", "--password", metavar='PASSWORD', help="Password or LM:NTLM hash, will prompt if not specified")
@@ -61,7 +66,14 @@ def main():
     parser.add_argument("-c", "--clear", action='store_true', help="Clear, i.e. remove all SPNs")
     parser.add_argument("-q", "--query", action='store_true', help="Show the current target SPNs instead of modifying anything")
     parser.add_argument("-a", "--additional", action='store_true', help="Add the SPN via the msDS-AdditionalDnsHostName attribute")
-
+    parser.add_argument('-k', '--kerberos', action="store_true", help='Use Kerberos authentication. Grabs credentials from ccache file '
+                        '(KRB5CCNAME) based on target parameters. If valid credentials '
+                        'cannot be found, it will use the ones specified in the command '
+                        'line')
+    parser.add_argument('-dc-ip', action="store", metavar="ip address", help='IP Address of the domain controller. If omitted it will use the domain part (FQDN) specified in the target parameter')
+    parser.add_argument('-aesKey', action="store", metavar="hex key", help='AES key to use for Kerberos Authentication '
+                                                                          '(128 or 256 bits)')
+   
     args = parser.parse_args()
 
     if not args.query and not args.clear:
@@ -70,25 +82,66 @@ def main():
 
     #Prompt for password if not set
     authentication = None
-    if args.user is not None:
+    if not args.user or not '\\' in args.user:
+        print_f('Username must include a domain, use: DOMAIN\\username')
+        sys.exit(1)
+    domain, user = args.user.split('\\', 1)
+    if not args.kerberos:
         authentication = NTLM
-        if not '\\' in args.user:
-            print_f('Username must include a domain, use: DOMAIN\\username')
-            sys.exit(1)
+        sasl_mech = None
         if args.password is None:
             args.password = getpass.getpass()
+    else:
+        TGT = None
+        TGS = None
+        try:
+            # Hashes
+            lmhash, nthash = password.split(':')
+            assert len(nthash) == 32
+            password = ''
+        except:
+            # Password
+            lmhash = ''
+            nthash = ''
+            password = args.password
+        if 'KRB5CCNAME' in os.environ and os.path.exists(os.environ['KRB5CCNAME']):
+            domain, user, TGT, TGS = CCache.parseFile(domain, user, 'ldap/%s' % args.host)
+        if args.dc_ip is None:
+            kdcHost = domain
+        else:
+            kdcHost = options.dc_ip
+        userName = Principal(user, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
+        if not TGT and not TGS:
+            tgt, cipher, oldSessionKey, sessionKey = getKerberosTGT(userName, password, domain, lmhash, nthash, args.aesKey, kdcHost)
+        elif TGT:
+            # Has TGT
+            tgt = TGT['KDC_REP']
+            cipher = TGT['cipher']
+            sessionKey = TGT['sessionKey']
+        if not TGS:
+            # Request TGS
+            serverName = Principal('ldap/%s' % args.host, type=constants.PrincipalNameType.NT_SRV_INST.value)
+            TGS = getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey)
+        else:
+            # Convert to tuple expected
+            TGS = (TGS['KDC_REP'], TGS['cipher'], TGS['sessionKey'], TGS['sessionKey'])
+        authentication = SASL
+        sasl_mech = KERBEROS
 
     controls = security_descriptor_control(sdflags=0x04)
     # define the server and the connection
     s = Server(args.host, get_info=ALL)
     print_m('Connecting to host...')
-    c = Connection(s, user=args.user, password=args.password, authentication=authentication)
+    c = Connection(s, user=args.user, password=args.password, authentication=authentication, sasl_mechanism=sasl_mech)
     print_m('Binding to host')
     # perform the Bind operation
-    if not c.bind():
-        print_f('Could not bind with specified credentials')
-        print_f(c.result)
-        sys.exit(1)
+    if authentication == NTLM:
+        if not c.bind():
+            print_f('Could not bind with specified credentials')
+            print_f(c.result)
+            sys.exit(1)
+    else:
+        ldap_kerberos(domain, kdcHost, None, userName, c, args.host, TGS)
     print_o('Bind OK')
 
     if args.target:
