@@ -22,7 +22,7 @@
 # SOFTWARE.
 #
 # Tool to interact with ADIDNS over LDAP
-# Test
+# 
 ####################
 import sys
 import argparse
