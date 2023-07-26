@@ -369,8 +369,6 @@ def main():
 
 
     args = parser.parse_args()
-    if args.dns_ip:
-       DNS = args.dns_ip 
 
     #Prompt for password if not set
     authentication = None
