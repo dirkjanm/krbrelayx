@@ -22,7 +22,7 @@
 # SOFTWARE.
 #
 # Tool to interact with ADIDNS over LDAP
-#
+# 
 ####################
 import sys
 import argparse
@@ -235,14 +235,22 @@ def get_dns_zones(connection, root):
         zones.append(entry['attributes']['dc'])
     return zones
 
-def get_next_serial(server, zone, tcp):
+def get_next_serial(dnsserver, dc, zone, tcp):
     # Create a resolver object
     dnsresolver = dns.resolver.Resolver()
+    # Check if DNS-server is present
+    if dnsserver:
+       server = dnsserver
+    else:
+        server = dc
+   
+
     # Is our host an IP? In that case make sure the server IP is used
     # if not assume lookups are working already
     try:
         socket.inet_aton(server)
         dnsresolver.nameservers = [server]
+        
     except socket.error:
         pass
     res = dnsresolver.resolve(zone, 'SOA',tcp=tcp)
@@ -340,6 +348,7 @@ def main():
                         'cannot be found, it will use the ones specified in the command '
                         'line')
     parser.add_argument('-dc-ip', action="store", metavar="ip address", help='IP Address of the domain controller. If omitted it will use the domain part (FQDN) specified in the target parameter')
+    parser.add_argument('-dns-ip', action="store", metavar="ip address", help='IP Address of a DNS Server')
     parser.add_argument('-aesKey', action="store", metavar="hex key", help='AES key to use for Kerberos Authentication '
                                                                           '(128 or 256 bits)')
     recordopts = parser.add_argument_group("Record options")
@@ -360,6 +369,7 @@ def main():
 
 
     args = parser.parse_args()
+
     #Prompt for password if not set
     authentication = None
     if not args.user or not '\\' in args.user:
@@ -389,7 +399,7 @@ def main():
         if args.dc_ip is None:
             kdcHost = domain
         else:
-            kdcHost = options.dc_ip
+            kdcHost = args.dc_ip
         userName = Principal(user, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
         if not TGT and not TGS:
             tgt, cipher, oldSessionKey, sessionKey = getKerberosTGT(userName, password, domain, lmhash, nthash, args.aesKey, kdcHost)
@@ -446,6 +456,7 @@ def main():
                 print('    %s' % zone)
         return
 
+    
     target = args.record
     if args.zone:
         zone = args.zone
@@ -474,6 +485,7 @@ def main():
     if args.action in ['add', 'modify', 'remove'] and not args.data:
         print_f('This operation requires you to specify record data with --data')
         return
+    
 
     # Check if we need the target record to exists, and if yes if it does
     if args.action in ['modify', 'remove', 'ldapdelete', 'resurrect', 'query'] and not targetentry:
@@ -502,7 +514,7 @@ def main():
                         print_f('Record already exists and points to %s. Use --action modify to overwrite or --allow-multiple to override this' % address.formatCanonical())
                         return False
             # If we are here, no A records exists yet
-            record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
+            record = new_record(addtype, get_next_serial(args.dns_ip, args.host, zone,args.tcp))
             record['Data'] = DNS_RPC_RECORD_A()
             record['Data'].fromCanonical(args.data)
             print_m('Adding extra record')
@@ -515,7 +527,7 @@ def main():
                 'dNSTombstoned': False,
                 'name': target
             }
-            record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
+            record = new_record(addtype, get_next_serial(args.dns_ip, args.host, zone,args.tcp))
             record['Data'] = DNS_RPC_RECORD_A()
             record['Data'].fromCanonical(args.data)
             record_dn = 'DC=%s,%s' % (target, searchtarget)
@@ -537,7 +549,7 @@ def main():
                 records.append(record)
         if not targetrecord:
             print_f('No A record exists yet. Use --action add to add it')
-        targetrecord['Serial'] = get_next_serial(args.host, zone,args.tcp)
+        targetrecord['Serial'] = get_next_serial(args.dns_ip, args.host, zone,args.tcp)
         targetrecord['Data'] = DNS_RPC_RECORD_A()
         targetrecord['Data'].fromCanonical(args.data)
         records.append(targetrecord.getData())
@@ -565,7 +577,7 @@ def main():
             diff = datetime.datetime.today() - datetime.datetime(1601,1,1)
             tstime = int(diff.total_seconds()*10000)
             # Add a null record
-            record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
+            record = new_record(addtype, get_next_serial(args.dns_ip, args.host, zone,args.tcp))
             record['Data'] = DNS_RPC_RECORD_TS()
             record['Data']['entombedTime'] = tstime
             c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record.getData()])],
@@ -585,7 +597,7 @@ def main():
              diff = datetime.datetime.today() - datetime.datetime(1601,1,1)
              tstime = int(diff.total_seconds()*10000)
              # Add a null record
-             record = new_record(addtype, get_next_serial(args.host, zone,args.tcp))
+             record = new_record(addtype, get_next_serial(args.dns_ip, args.host, zone,args.tcp))
              record['Data'] = DNS_RPC_RECORD_TS()
              record['Data']['entombedTime'] = tstime
              c.modify(targetentry['dn'], {'dnsRecord': [(MODIFY_REPLACE, [record.getData()])],

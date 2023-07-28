@@ -41,10 +41,11 @@ Main options:
 ## dnstool.py
 Add/modify/delete Active Directory Integrated DNS records via LDAP.
 ```
-usage: dnstool.py [-h] [-u USERNAME] [-p PASSWORD] [--forest] [--zone ZONE]
-                  [--print-zones] [-r TARGETRECORD]
-                  [-a {add,modify,query,remove,ldapdelete}] [-t {A}]
-                  [-d RECORDDATA] [--allow-multiple] [--ttl TTL]
+usage: dnstool.py [-h] [-u USERNAME] [-p PASSWORD] [--forest] [--legacy] [--zone ZONE]
+                  [--print-zones] [--tcp] [-k] [-dc-ip ip address] [-dns-ip ip address]
+                  [-aesKey hex key] [-r TARGETRECORD]
+                  [-a {add,modify,query,remove,resurrect,ldapdelete}] [-t {A}] [-d RECORDDATA]
+                  [--allow-multiple] [--ttl TTL]
                   HOSTNAME
 
 Query/modify DNS records for Active Directory integrated DNS via LDAP
