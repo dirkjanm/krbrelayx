@@ -1,6 +1,7 @@
 from __future__ import unicode_literals
 import struct
 import datetime
+import random
 from binascii import unhexlify, hexlify
 from pyasn1.type.univ import noValue
 from pyasn1.codec.der import decoder, encoder
@@ -43,7 +44,7 @@ def get_auth_data(token, options):
     if options.victim:
         username = options.victim
     else:
-        username = "unknown$"
+        username = f"unknown{random.randint(0, 10000):04d}$"
     return {
         "domain": domain,
         "username": username,
