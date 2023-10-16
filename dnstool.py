@@ -347,6 +347,8 @@ def main():
                         '(KRB5CCNAME) based on target parameters. If valid credentials '
                         'cannot be found, it will use the ones specified in the command '
                         'line')
+    parser.add_argument('-port', default=389, metavar="port", type=int, help='LDAP port, default value is 389')
+    parser.add_argument('-force-ssl', action='store_true', default=False, help='Force SSL when connecting to LDAP server')
     parser.add_argument('-dc-ip', action="store", metavar="ip address", help='IP Address of the domain controller. If omitted it will use the domain part (FQDN) specified in the target parameter')
     parser.add_argument('-dns-ip', action="store", metavar="ip address", help='IP Address of a DNS Server')
     parser.add_argument('-aesKey', action="store", metavar="hex key", help='AES key to use for Kerberos Authentication '
@@ -419,7 +421,7 @@ def main():
         sasl_mech = KERBEROS
 
     # define the server and the connection
-    s = Server(args.host, get_info=ALL)
+    s = Server(args.host, port=args.port, use_ssl=args.force_ssl, get_info=ALL)
     print_m('Connecting to host...')
     c = Connection(s, user=args.user, password=args.password, authentication=authentication, sasl_mechanism=sasl_mech)
     print_m('Binding to host')
