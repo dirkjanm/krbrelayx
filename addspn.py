@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ####################
 #
-# Copyright (c) 2019 Dirk-jan Mollema (@_dirkjan)
+# Copyright (c) 2023 Dirk-jan Mollema (@_dirkjan)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,6 @@
 ####################
 import sys
 import argparse
-import ldapdomaindump
 import random
 import string
 import getpass
@@ -96,7 +95,7 @@ def main():
         TGS = None
         try:
             # Hashes
-            lmhash, nthash = password.split(':')
+            lmhash, nthash = args.password.split(':')
             assert len(nthash) == 32
             password = ''
         except:
