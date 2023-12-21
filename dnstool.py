@@ -388,7 +388,7 @@ def main():
         TGS = None
         try:
             # Hashes
-            lmhash, nthash = password.split(':')
+            lmhash, nthash = args.password.split(':')
             assert len(nthash) == 32
             password = ''
         except:
