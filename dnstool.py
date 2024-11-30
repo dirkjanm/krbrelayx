@@ -226,13 +226,13 @@ class DNS_RPC_RECORD_TS(Structure):
         microseconds = self['entombedTime'] / 10.
         return datetime.datetime(1601,1,1) + datetime.timedelta(microseconds=microseconds)
 
-def get_dns_zones(connection, root):
-    connection.search(root, '(objectClass=dnsZone)', search_scope=LEVEL, attributes=['dc'])
+def get_dns_zones(connection, root, attr="dc"):
+    connection.search(root, '(objectClass=dnsZone)', search_scope=LEVEL, attributes=[attr])
     zones = []
     for entry in connection.response:
         if entry['type'] != 'searchResEntry':
             continue
-        zones.append(entry['attributes']['dc'])
+        zones.append(entry['attributes'][attr])
     return zones
 
 def get_next_serial(dnsserver, dc, zone, tcp):
@@ -342,6 +342,7 @@ def main():
     parser.add_argument("--legacy", action='store_true', help="Search the System partition (legacy DNS storage)")
     parser.add_argument("--zone", help="Zone to search in (if different than the current domain)")
     parser.add_argument("--print-zones", action='store_true', help="Only query all zones on the DNS server, no other modifications are made")
+    parser.add_argument("--print-zones-dn", action='store_true', help="Query and print the Distinguished Names of all zones on the DNS server")
     parser.add_argument("--tcp", action='store_true', help="use DNS over TCP")
     parser.add_argument('-k', '--kerberos', action="store_true", help='Use Kerberos authentication. Grabs credentials from ccache file '
                         '(KRB5CCNAME) based on target parameters. If valid credentials '
@@ -444,14 +445,18 @@ def main():
         else:
             dnsroot = 'CN=MicrosoftDNS,DC=DomainDnsZones,%s' % domainroot
 
-    if args.print_zones:
-        zones = get_dns_zones(c, dnsroot)
+    if args.print_zones or args.print_zones_dn:
+        if args.print_zones_dn:
+            attr = "distinguishedName"
+        else:
+            attr = "dc"
+        zones = get_dns_zones(c, dnsroot,attr)
         if len(zones) > 0:
             print_m('Found %d domain DNS zones:' % len(zones))
             for zone in zones:
                 print('    %s' % zone)
         forestdns = 'CN=MicrosoftDNS,DC=ForestDnsZones,%s' % s.info.other['rootDomainNamingContext'][0]
-        zones = get_dns_zones(c, forestdns)
+        zones = get_dns_zones(c, forestdns,attr)
         if len(zones) > 0:
             print_m('Found %d forest DNS zones:' % len(zones))
             for zone in zones:
