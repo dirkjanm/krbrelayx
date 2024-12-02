@@ -71,6 +71,7 @@ def main():
             c.setTargets(targetSystem)
             c.setExeFile(options.e)
             c.setCommand(options.c)
+            c.setAddComputerSMB(None)
             c.setEnumLocalAdmins(options.enum_local_admins)
             c.setEncoding(codec)
             c.setMode(mode)
