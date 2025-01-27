@@ -1,0 +1,2 @@
+ldap3-bleeding-edge==2.10.1.1337
+impacket==0.12.0
