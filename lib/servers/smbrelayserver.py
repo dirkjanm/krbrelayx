@@ -217,6 +217,9 @@ class SMBRelayServer(Thread):
 
                         # This is Kerberos, we can do something with this
                         try:
+                            if self.config.mode == 'EXPORT':
+                                authdata = get_kerberos_loot(securityBlob, self.config)
+                            
                             # Are we in attack mode? If so, launch attack against all targets
                             if self.config.mode == 'ATTACK':
                                 # If you're looking for the magic, it's in lib/utils/kerberos.py
