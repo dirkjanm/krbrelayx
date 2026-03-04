@@ -108,7 +108,7 @@ def main():
         if args.dc_ip is None:
             kdcHost = domain
         else:
-            kdcHost = options.dc_ip
+            kdcHost = args.dc_ip
         userName = Principal(user, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
         if not TGT and not TGS:
             tgt, cipher, oldSessionKey, sessionKey = getKerberosTGT(userName, password, domain, lmhash, nthash, args.aesKey, kdcHost)
