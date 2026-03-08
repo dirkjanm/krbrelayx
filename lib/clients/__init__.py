@@ -14,7 +14,8 @@
 #
 # ToDo:
 #
-import os, sys, pkg_resources
+import os, sys
+from importlib.resources import files
 from impacket import LOG
 
 PROTOCOL_CLIENTS = {}
@@ -76,7 +77,8 @@ class ProtocolClient:
         # Charged of keeping connection alive
         raise RuntimeError('Virtual Function')
 
-for file in pkg_resources.resource_listdir('lib', 'clients'):
+clients_dir = files('lib').joinpath('clients')
+for file in clients_dir.iterdir():
     if file.find('__') >=0 or os.path.splitext(file)[1] == '.pyc':
         continue
     __import__(__package__ + '.' + os.path.splitext(file)[0])
