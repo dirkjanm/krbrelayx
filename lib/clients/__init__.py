@@ -79,10 +79,10 @@ class ProtocolClient:
 
 clients_dir = files('lib').joinpath('clients')
 for file in clients_dir.iterdir():
-    if file.find('__') >=0 or os.path.splitext(file)[1] == '.pyc':
+    if file.name.find('__') >=0 or os.path.splitext(file.name)[1] == '.pyc':
         continue
-    __import__(__package__ + '.' + os.path.splitext(file)[0])
-    module = sys.modules[__package__ + '.' + os.path.splitext(file)[0]]
+    __import__(__package__ + '.' + os.path.splitext(file.name)[0])
+    module = sys.modules[__package__ + '.' + os.path.splitext(file.name)[0]]
     try:
         pluginClasses = set()
         try:
