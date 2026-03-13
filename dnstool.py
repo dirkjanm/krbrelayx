@@ -30,16 +30,15 @@ import getpass
 import re
 import os
 import socket
-from struct import unpack, pack
+from struct import unpack
 from impacket.structure import Structure
 from impacket.krb5.ccache import CCache
 from impacket.krb5.kerberosv5 import getKerberosTGT, getKerberosTGS
 from impacket.krb5.types import Principal
 from impacket.krb5 import constants
-from ldap3 import NTLM, Server, Connection, ALL, LEVEL, BASE, MODIFY_DELETE, MODIFY_ADD, MODIFY_REPLACE, SASL, KERBEROS
+from ldap3 import NTLM, Server, Connection, ALL, LEVEL,MODIFY_DELETE, MODIFY_ADD, MODIFY_REPLACE, SASL, KERBEROS
 from lib.utils.kerberos import ldap_kerberos
 import ldap3
-from impacket.ldap import ldaptypes
 import dns.resolver
 import datetime
 
@@ -480,7 +479,15 @@ def main():
 
 
     searchtarget = 'DC=%s,%s' % (zone, dnsroot)
-    # print s.info.naming_contexts
+    # First search for the entry in case ACE does not allow retrieving attributes
+    # If the attribute of an entry cannot be retrieven, then, the objectClass filter
+    # will not work properly
+    if args.action == 'query':
+        entrywithoutfilter = None
+        c.search(searchtarget, '(objectClass=*)', attributes=None)
+        for entry in c.response:
+            if entry['dn'].startswith(f'DC={target}'):
+                entrywithoutfilter = entry
     c.search(searchtarget, '(&(objectClass=dnsNode)(name=%s))' % ldap3.utils.conv.escape_filter_chars(target), attributes=['dnsRecord','dNSTombstoned','name'])
     targetentry = None
     for entry in c.response:
@@ -492,9 +499,12 @@ def main():
     if args.action in ['add', 'modify', 'remove'] and not args.data:
         print_f('This operation requires you to specify record data with --data')
         return
-    
+
 
     # Check if we need the target record to exists, and if yes if it does
+    if args.action == 'query' and not targetentry and entrywithoutfilter:
+        print_o('Record found but no rights to list attributes')
+        return
     if args.action in ['modify', 'remove', 'ldapdelete', 'resurrect', 'query'] and not targetentry:
         print_f('Target record not found!')
         return
