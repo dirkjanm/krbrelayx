@@ -27,6 +27,10 @@ class KrbRelayxConfig(NTLMRelayxConfig):
         self.addcomputer = False
         self.delegateaccess = False
 
+        # MSSQL options
+        self.queries = []
+        self.interactive = False
+
         # Custom options
         self.victim = None
 
@@ -43,6 +47,12 @@ class KrbRelayxConfig(NTLMRelayxConfig):
         self.dumpgmsa = dumpgmsa
         self.dumpadcs = dumpadcs
         self.sid = sid
+
+    def setMSSQLOptions(self, queries):
+        self.queries = queries
+
+    def setInteractive(self, interactive):
+        self.interactive = interactive
 
     def setAuthOptions(self, aeskey, hashes, dcip, password, salt, israwpassword=False):
         self.dcip = dcip

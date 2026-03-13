@@ -78,6 +78,8 @@ def main():
             c.setAttacks(PROTOCOL_ATTACKS)
             c.setLootdir(options.lootdir)
             c.setLDAPOptions(options.no_dump, options.no_da, options.no_acl, options.no_validate_privs, options.escalate_user, options.add_computer, options.delegate_access, options.dump_laps, options.dump_gmsa, options.dump_adcs, options.sid)
+            c.setMSSQLOptions(options.query)
+            c.setInteractive(options.interactive)
             c.setIPv6(options.ipv6)
             c.setWpadOptions(options.wpad_host, options.wpad_auth_num)
             c.setSMB2Support(not options.no_smb2support)
@@ -120,6 +122,8 @@ def main():
                                                                              'full URL, one per line')
     parser.add_argument('-w', action='store_true', help='Watch the target file for changes and update target list '
                                                         'automatically (only valid with -tf)')
+
+    parser.add_argument("-i", "--interactive", action="store_true", help="Launch an smbclient, LDAP console or SQL shell instead")
 
     # Interface address specification
     parser.add_argument('-ip', '--interface-ip', action='store', metavar='INTERFACE_IP', help='IP address of interface to '
@@ -164,6 +168,10 @@ def main():
                         'target system. If not specified, hashes will be dumped (secretsdump.py must be in the same '
                                                           'directory).')
     smboptions.add_argument('--enum-local-admins', action='store_true', required=False, help='If relayed user is not admin, attempt SAMR lookup to see who is (only works pre Win 10 Anniversary)')
+
+    # MSSQL options
+    mssqloptions = parser.add_argument_group("MSSQL attack options")
+    mssqloptions.add_argument("-q", "--query", action="append", required=False, metavar="QUERY", help="MSSQL query to execute (can specify multiple)")
 
     #LDAP options
     ldapoptions = parser.add_argument_group("LDAP attack options")
