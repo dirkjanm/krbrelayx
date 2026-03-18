@@ -91,6 +91,7 @@ def main():
             c.setKrbOptions(options.format, options.victim)
             c.setIsADCSAttack(options.adcs)
             c.setADCSOptions(options.template)
+            c.setRelayOptions(options.ghost_spn, options.no_ntlm)
 
             #If the redirect option is set, configure the HTTP server to redirect targets to SMB
             if server is HTTPKrbRelayServer and options.r is not None:
@@ -142,6 +143,10 @@ def main():
     parser.add_argument('-wa', '--wpad-auth-num', action='store', help='Prompt for authentication N times for clients without MS16-077 installed '
                                                                        'before serving a WPAD file.')
     parser.add_argument('-6', '--ipv6', action='store_true', help='Listen on both IPv6 and IPv4')
+    parser.add_argument('--no-ntlm', action='store_true', help='Remove NTLM from offered SPNEGO MechTypes, '
+                  'forcing Kerberos-only authentication from connecting clients')
+    parser.add_argument('--ghost-spn', action='store_true', help='Relay tickets to the first configured target '
+                  'even when the SPN hostname does not match any target (for Ghost SPN attacks)')
 
     # Authentication arguments
     group = parser.add_argument_group('Kerberos Keys (of your account with unconstrained delegation)')

