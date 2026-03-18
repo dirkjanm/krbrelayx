@@ -18,6 +18,8 @@ from impacket.krb5.crypto import Key, _enctype_table, Enctype, InvalidChecksum, 
 from .krbcredccache import KrbCredCCache
 from .spnego import GSSAPIHeader_SPNEGO_Init, GSSAPIHeader_KRB5_AP_REQ
 from impacket import LOG
+import logging
+LOG_KRB = logging.getLogger(__name__)
 from impacket.krb5.types import Principal, KerberosTime, Ticket
 from impacket.krb5 import constants
 from impacket.krb5.kerberosv5 import getKerberosTGS
@@ -263,12 +265,16 @@ def ccache2kirbi(ccachefile, kirbifile):
 def ldap_kerberos_auth(ldapconnection, authdata_gssapi):
     # Hackery to authenticate with ldap3 using impacket Kerberos stack
     # I originally wrote this for BloodHound.py, but it works fine (tm) here too
+    LOG_KRB.debug('Opening LDAP connection to %s', ldapconnection.server.host)
     ldapconnection.open(read_server_info=False)
     request = bind_operation(ldapconnection.version, SASL, None, None, ldapconnection.sasl_mechanism, authdata_gssapi)
+    LOG_KRB.debug('Sending SASL GSSAPI bind request')
     response = ldapconnection.post_send_single_response(ldapconnection.send('bindRequest', request, None))[0]
     ldapconnection.result = response
+    LOG_KRB.debug('LDAP bind response: result=%s description=%s', response['result'], response['description'])
     if response['result'] == 0:
         ldapconnection.bound = True
+        LOG_KRB.debug('LDAP bind successful, refreshing server info')
         ldapconnection.refresh_server_info()
     return response['result'] == 0
 

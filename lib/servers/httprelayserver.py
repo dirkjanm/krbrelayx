@@ -181,10 +181,12 @@ class HTTPKrbRelayServer(HTTPRelayServer):
             sclass, host = authdata['service'].split('/')
             for target in self.server.config.target.originalTargets:
                 parsed_target = target
-                if host.lower() in parsed_target.hostname.lower():
+                if host.lower() in (parsed_target.hostname or '').lower():
                     # Found a target with the same SPN
                     client = self.server.config.protocolClients[target.scheme.upper()](self.server.config, parsed_target)
-                    if not client.initConnection(authdata, self.server.config.dcip):
+                    client.initConnection(authdata, self.server.config.dcip)
+                    if not client.session or not client.session.bound:
+                        LOG.error('Relay to %s failed - session not established', parsed_target.netloc.lower())
                         return
                     # We have an attack.. go for it
                     attack = self.server.config.attacks[parsed_target.scheme.upper()]
