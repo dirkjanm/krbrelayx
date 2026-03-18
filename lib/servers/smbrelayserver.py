@@ -578,7 +578,9 @@ class SMBRelayServer(Thread):
             if host.lower() in parsed_target.hostname.lower():
                 # Found a target with the same SPN
                 client = self.config.protocolClients[target.scheme.upper()](self.config, parsed_target)
-                if not client.initConnection(authdata, self.config.dcip):
+                client.initConnection(authdata, self.config.dcip)
+                if not client.session or not client.session.bound:
+                    LOG.error('Relay to %s failed - session not established', parsed_target.netloc.lower())
                     return
                 # We have an attack.. go for it
                 attack = self.config.attacks[parsed_target.scheme.upper()]
