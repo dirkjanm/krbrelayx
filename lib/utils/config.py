@@ -30,6 +30,10 @@ class KrbRelayxConfig(NTLMRelayxConfig):
         # Custom options
         self.victim = None
 
+        # Relay options
+        self.ghostspn = False
+        self.nontlm = False
+
     # Make sure we have a fixed version of this to avoid incompatibilities with impacket
     def setLDAPOptions(self, dumpdomain, addda, aclattack, validateprivs, escalateuser, addcomputer, delegateaccess, dumplaps, dumpgmsa, dumpadcs, sid):
         self.dumpdomain = dumpdomain
@@ -55,3 +59,7 @@ class KrbRelayxConfig(NTLMRelayxConfig):
     def setKrbOptions(self, outformat, victim):
         self.format = outformat
         self.victim = victim
+
+    def setRelayOptions(self, ghostspn, nontlm):
+        self.ghostspn = ghostspn
+        self.nontlm = nontlm
