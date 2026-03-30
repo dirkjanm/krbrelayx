@@ -362,7 +362,8 @@ def main():
                         default='query',
                         help="Action to perform. Options: add (add a new record), modify ("
                              "modify an existing record), query (show existing), remove (mark record "
-                             "for cleanup from DNS cache), delete (delete from LDAP). Default: query"
+                             "for cleanup from DNS cache), resurrect (resurrect a tombstoned record), "
+                             "ldapdelete (delete from LDAP). Default: query"
                         )
     recordopts.add_argument("-t", "--type", choices=['A'], default='A', help="Record type to add (Currently only A records supported)")
     recordopts.add_argument("-d", "--data", metavar='RECORDDATA', help="Record data (IP address)")
