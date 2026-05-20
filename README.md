@@ -199,6 +199,107 @@ AD CS attack options:
                         Victim username or computername$, to request the correct certificate name.
 ```
 
+## SOCKS proxy mode (`-socks`) (complete experimental type shit)
+
+fork basically adds a SOCKS4/5 proxy that keeps an authenticated Kerberos HTTP relay session alive so you can have a relayed account from a local browser instead of a one-shot on most webapp supporting kerberos auth. Mainly its copied from `ntlmrelayx`'s `-socks` but is  for the Kerberos AP-REQ flow.
+
+### Target profiles
+
+Profiles live in `lib/utils/socksprofiles.py`. Each one is a small dict that the SOCKS plugin reads per-relay to decide:
+
+- which path to spend the AP-REQ on at relay setup, in exchange for a session cookie (`login_path`)
+- which captured cookies to suppress on tunneled requests (`cookies_never_reinject`)
+- which paths to stub locally with a fake 503 instead of forwarding (`stubbed_paths`)
+- which extra path prefixes to route off the per-relay lock (`extra_bypass_prefixes`)
+
+Selecting a profile flag automatically enables `-socks`.
+
+| Flag       | Profile   | Notes                                                     |
+|------------|-----------|-----------------------------------------------------------|
+| (none)     | `generic` | Plain SOCKS proxy, no app-specific behavior               |
+| `-gitea`   | `gitea`   | Gitea with the SSPI auth source enabled. Implies `-socks` |
+
+### CLI flags
+
+```
+SOCKS proxy options:
+  -socks                Launch a SOCKS4/5 proxy that keeps relayed Kerberos HTTP sessions open and tunnels browser traffic through them. Generic
+                        mode by default; pair with -gitea (or another target profile) for app-specific routing. While -socks is set, -c and -e are
+                        ignored for HTTP/HTTPS targets.
+  -socks-address ADDRESS
+                        Address to bind the SOCKS proxy to (default: 127.0.0.1).
+  -socks-port PORT      Port to bind the SOCKS proxy to (default: 1080).
+  -socks-api-port PORT  Reserved port for a future REST API (default: 9090).
+  -socks-login-path PATH
+                        Override the active profile's pre-auth login path. The AP-REQ is spent once against this path at relay setup in exchange
+                        for a session cookie. Empty string disables the pre-auth probe and replays the AP-REQ on every tunneled request (only safe
+                        against non-Windows targets).
+
+Target profile options:
+  -gitea                Tune the SOCKS proxy for a Gitea target with the SSPI auth source enabled. Adds the Gitea SSPI login URL, suppresses the
+                        websspi cookie on tunneled requests, stubs Gitea's SSE endpoints, and extends the static-asset bypass list. Implies
+                        -socks.
+```
+
+### Examples
+
+```
+# Plain SOCKS proxy against any Kerberos-protected web target
+python3 krbrelayx.py -t http://target/ -socks
+
+# SOCKS tuned for Gitea (also enables -socks)
+python3 krbrelayx.py -t http://gitea/ -gitea
+
+# Generic SOCKS with a custom pre-auth login URL
+python3 krbrelayx.py -t http://target/ -socks -socks-login-path /sso/login
+
+# Gitea profile but override the login URL (e.g. behind a reverse proxy)
+python3 krbrelayx.py -t http://gitea/ -gitea -socks-login-path /git/user/login?auth_with_sspi=1
+```
+
+### Adding a target profile
+
+Edit `lib/utils/socksprofiles.py`, copy the `GITEA` dict as a starting point, register it in `PROFILES`, then add a CLI flag in `krbrelayx.py` that sets `socks_profile` to the profile name and turns `options.socks` on.
+
+### Browser setup
+
+Point Firefox (or any SOCKS-capable browser) at `127.0.0.1:1080`. For Firefox, also enable **"Proxy DNS when using SOCKS v5"** so target hostname lookups happen at the proxy side; otherwise the routing key will be the resolved IP and the relay table lookup will miss.
+
+When the SOCKS plugin first sees a browser request it returns a 401 prompting for HTTP Basic. Anything works for the password (e.g. `x:x`); the username is only used internally to decide which active relay to tunnel through. The Basic header is stripped before the request reaches the target.
+
+### Curl
+
+```
+curl --socks5-hostname 127.0.0.1:1080 -u 'x:x' \
+     'http://target:3000/api/v1/user'
+```
+
+### How requests are routed
+
+Once a relay is registered, each browser request is dispatched in one of three ways depending on its path:
+
+| Routing       | Triggers                                                                 | Auth              |
+|---------------|--------------------------------------------------------------------------|-------------------|
+| **stub**      | `/user/events`, `/notifications/sse`                                     | none              |
+| **bypass**    | `/assets/`, `/avatars/`, `/img/`, `/favicon.*`, `/robots.txt`, similar   | cookies           |
+| **relay**     | everything else                                                          | cookies (preferred) or Negotiate replay (fallback) |
+
+- **Stub**: the proxy answers locally with a synthetic 503 and never contacts the target. SSE long-poll endpoints often return 401 with a session-clearing `Set-Cookie` when SSPI auth fails, which logs the browser out; stubbing them avoids that side effect entirely.
+- **Bypass**: a fresh per-request TCP connection to the target. Used for static assets and for endpoints that don't need the relay socket. Multiple asset fetches parallelize this way instead of queueing on the per-relay lock.
+- **Relay**: the persistent authenticated TCP socket is reused. A per-relay mutex serializes concurrent dynamic requests so they queue rather than getting rejected with 503.
+
+### Why cookies, not just AP-REQ replay
+
+Windows SSPI keeps a replay cache for Kerberos authenticators. Sending the same AP-REQ a second time returns `SEC_E_LOGON_DENIED` (`0x8009030c`), which surfaces to the browser as a 401 or a redirect to the login page.
+
+To get more than one request out of a single AP-REQ the relay client spends it once at setup, against `-socks-login-path` (default `/user/login?auth_with_sspi=1` for Gitea), and captures the session cookies the target hands back. The SOCKS plugin then authenticates tunneled requests with those cookies and only falls back to replaying the Negotiate header when no session cookie is available.
+
+### Limits
+
+- API endpoints under `/api/v1/*` reject cookie-only auth and demand an `Authorization` header. They will work on the first AP-REQ replay and return `500: could not get auth data` on subsequent ones once the SSPI replay cache fires. Mint a Gitea Personal Access Token from a signed-in browser session if you need durable API access.
+- Browser session lifetime is bounded by the relay target's session expiration. When the captured session cookie expires server-side there is no way to re-auth without a fresh AP-REQ.
+- The relay TCP socket is single-threaded by nature, so dynamic requests serialize. Static assets parallelize via per-request bypass connections.
+
 ### TODO:
 - Specifying SMB as target is not yet complete, it's recommended to run in export mode and then use secretsdump with `-k`
 - Conversion tool from/to ccache/kirbi

