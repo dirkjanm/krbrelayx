@@ -36,12 +36,13 @@ from impacket.krb5.ccache import CCache
 from impacket.krb5.kerberosv5 import getKerberosTGT, getKerberosTGS
 from impacket.krb5.types import Principal
 from impacket.krb5 import constants
-from ldap3 import NTLM, Server, Connection, ALL, LEVEL, BASE, MODIFY_DELETE, MODIFY_ADD, MODIFY_REPLACE, SASL, KERBEROS
+from ldap3 import NTLM, Server, Connection, ALL, LEVEL, BASE, MODIFY_DELETE, MODIFY_ADD, MODIFY_REPLACE, SASL, KERBEROS, DIGEST_MD5
 from lib.utils.kerberos import ldap_kerberos
 import ldap3
 from impacket.ldap import ldaptypes
 import dns.resolver
 import datetime
+from ssl import CERT_NONE
 
 def print_m(string):
     sys.stderr.write('\033[94m[-]\033[0m %s\n' % (string))
@@ -348,6 +349,10 @@ def main():
                         '(KRB5CCNAME) based on target parameters. If valid credentials '
                         'cannot be found, it will use the ones specified in the command '
                         'line')
+    parser.add_argument('--digest-md5', action='store_true', help='Use signing support authentication with DIGEST_MD5 mechanism (works only with DC hostname, no IP supported. Example : dc01 or dc01.domain.com)')
+    parser.add_argument('--simple-auth', action='store_true', help='Use Simple authentication mechanism. Use with "-scheme ldaps" if signing is require on LDAP.')
+    parser.add_argument('--disable-signing', action='store_true', help='Disable signing on LDAP')
+    parser.add_argument('-scheme', action="store", metavar="scheme", default="ldap", help='LDAP scheme to use (ldap or ldaps)')
     parser.add_argument('-port', default=389, metavar="port", type=int, help='LDAP port, default value is 389')
     parser.add_argument('-force-ssl', action='store_true', default=False, help='Force SSL when connecting to LDAP server')
     parser.add_argument('-dc-ip', action="store", metavar="ip address", help='IP Address of the domain controller. If omitted it will use the domain part (FQDN) specified in the target parameter')
@@ -379,12 +384,24 @@ def main():
         print_f('Username must include a domain, use: DOMAIN\\username')
         sys.exit(1)
     domain, user = args.user.split('\\', 1)
-    if not args.kerberos:
+    if args.digest_md5:
+        print(f'Value: {args.digest_md5}')
+        authentication = SASL
+        sasl_mech = DIGEST_MD5
+        if args.password is None:
+            args.password = getpass.getpass()
+    elif args.simple_auth:
+        authentication = ldap3.SIMPLE
+        sasl_mech = None
+        if args.password is None:
+            args.password = getpass.getpass()
+    elif not args.kerberos:
         authentication = NTLM
         sasl_mech = None
         if args.password is None:
             args.password = getpass.getpass()
     else:
+        print(args.signing)
         TGT = None
         TGS = None
         try:
@@ -422,15 +439,49 @@ def main():
         sasl_mech = KERBEROS
 
     # define the server and the connection
-    s = Server(args.host, port=args.port, use_ssl=args.force_ssl, get_info=ALL)
+    if args.scheme == "ldap":
+        s = Server(args.host, port=args.port, use_ssl=args.force_ssl, get_info=ALL)
+    elif args.scheme == "ldaps":
+        tls = ldap3.Tls(validate=CERT_NONE)
+        s = Server(args.host, port=636, use_ssl=True, get_info=ALL, tls=tls, allowed_referral_hosts=[("*",True)])
+    else:
+        print_f('Invalid scheme')
+        sys.exit(1)
+
     print_m('Connecting to host...')
-    c = Connection(s, user=args.user, password=args.password, authentication=authentication, sasl_mechanism=sasl_mech)
+    if args.digest_md5:
+        #print(f'Domain: {domain}\nUser: {user}\nPassword: {args.password}')
+        c = Connection(s, authentication=authentication, sasl_mechanism=sasl_mech, sasl_credentials = (None, user, args.password, None, 'sign'))
+    elif args.simple_auth:
+        c = Connection(s, user=user+'@'+domain, password=args.password, authentication=authentication)
+    elif args.disable_signing:
+        c = Connection(s, user=args.user, password=args.password, authentication=authentication, sasl_mechanism=sasl_mech)
+    else:
+        if args.scheme == "ldap":
+            c = Connection(s, user=args.user, password=args.password, authentication=authentication, sasl_mechanism=sasl_mech, session_security=ldap3.ENCRYPT)
+        else:
+            c = Connection(s, user=args.user, password=args.password, authentication=authentication, sasl_mechanism=sasl_mech, channel_binding=ldap3.TLS_CHANNEL_BINDING)
     print_m('Binding to host')
     # perform the Bind operation
     if authentication == NTLM:
         if not c.bind():
             print_f('Could not bind with specified credentials')
             print_f(c.result)
+            sys.exit(1)
+    elif authentication == SASL and sasl_mech == DIGEST_MD5:
+        if not c.bind():
+            print(c.result)
+            print(c.result.values())
+            if 'digest-uri' in c.result.get('message'):
+                print()
+                print('You must use hostname instead of the IP.')
+            sys.exit(1)
+    elif authentication == ldap3.SIMPLE:
+        if not c.bind():
+            print(c.result)
+            if 'strongerAuthRequired' in c.result.values():
+                print()
+                print('Signing is probably set on LDAP. You must use LDAPS instead of LDAP then.')
             sys.exit(1)
     else:
         ldap_kerberos(domain, kdcHost, None, userName, c, args.host, TGS)
@@ -479,9 +530,47 @@ def main():
         target = target[:-(len(zone)+1)]
 
 
+    targetentry = None
     searchtarget = 'DC=%s,%s' % (zone, dnsroot)
+    search_filter = '(&(objectClass=dnsNode)(name=%s))' % ldap3.utils.conv.escape_filter_chars(target)
+
+    # Exact DN  of the record
+    record_dn = 'DC=%s,%s' % (target, searchtarget)
+
+    # Case of wildcard "*"
+    if target == '*':
+        c.search(
+            record_dn,
+            '(objectClass=dnsNode)',
+            search_scope=BASE,
+            attributes=['dnsRecord', 'dNSTombstoned', 'name']
+        )
+        for entry in c.response:
+            if entry['type'] != 'searchResEntry':
+                continue
+
+            targetentry = entry
+            break
+
+    # Fallback to classical search :
+    # - target != '*'
+    # - or target == '*' but not found with the BASE lookup
+    if targetentry is None:
+        c.search(
+            searchtarget,
+            search_filter,
+            attributes=['dnsRecord', 'dNSTombstoned', 'name']
+        )
+
+        for entry in c.response:
+            if entry['type'] != 'searchResEntry':
+                continue
+
+            targetentry = entry
+            break
+    
     # print s.info.naming_contexts
-    c.search(searchtarget, '(&(objectClass=dnsNode)(name=%s))' % ldap3.utils.conv.escape_filter_chars(target), attributes=['dnsRecord','dNSTombstoned','name'])
+    #c.search(searchtarget, '(&(objectClass=dnsNode)(name=%s))' % ldap3.utils.conv.escape_filter_chars(target), attributes=['dnsRecord','dNSTombstoned','name'])
     targetentry = None
     for entry in c.response:
         if entry['type'] != 'searchResEntry':
