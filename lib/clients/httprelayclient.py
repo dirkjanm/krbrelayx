@@ -53,6 +53,18 @@ class HTTPRelayClient(ProtocolClient):
         return self.doInitialActions(authdata, kdc)
 
     def doInitialActions(self, authdata, kdc=None):
+        if self.serverConfig.isADMINAttack:
+            # For AdminService, authentication and the POST are sent in a single
+            # request by SCCMAdminServiceAttack. Store the token now and skip the
+            # GET handshake — a Kerberos AP-REQ can only be used once.
+            if self.serverConfig.mode == 'RELAY':
+                token = authdata['krbauth']
+            else:
+                token = build_apreq(authdata['domain'], kdc, authdata['tgt'],
+                                    authdata['username'], 'http', self.targetHost)
+            self.serverConfig.setSCCMAdminToken(token)
+            return None, STATUS_SUCCESS
+
         self.session.request('GET', self.path)
         res = self.session.getresponse()
         res.read()

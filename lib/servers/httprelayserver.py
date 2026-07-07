@@ -178,18 +178,14 @@ class HTTPKrbRelayServer(HTTPRelayServer):
 
         def do_relay(self, authdata):
             self.authUser = '%s/%s' % (authdata['domain'], authdata['username'])
-            sclass, host = authdata['service'].split('/')
             for target in self.server.config.target.originalTargets:
                 parsed_target = target
-                if host.lower() in parsed_target.hostname.lower():
-                    # Found a target with the same SPN
+                if parsed_target.scheme.upper() in self.server.config.protocolClients:
                     client = self.server.config.protocolClients[target.scheme.upper()](self.server.config, parsed_target)
                     if not client.initConnection(authdata, self.server.config.dcip):
                         return
-                    # We have an attack.. go for it
                     attack = self.server.config.attacks[parsed_target.scheme.upper()]
                     client_thread = attack(self.server.config, client.session, self.authUser)
                     client_thread.start()
                     return
-            # Still here? Then no target was found matching this SPN
-            LOG.error('No target configured that matches the hostname of the SPN in the ticket: %s', parsed_target.netloc.lower())
+            LOG.error('No relay target configured for received connection')
