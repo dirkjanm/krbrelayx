@@ -6,6 +6,16 @@ It is recommended to install impacket from git directly to have the latest versi
 
 More info about this toolkit available in my blog <https://dirkjanm.io/krbrelayx-unconstrained-delegation-abuse-toolkit/>. Information about Kerberos relaying in the follow-up blog <https://dirkjanm.io/relaying-kerberos-over-dns-with-krbrelayx-and-mitm6/>.
 
+# Installation
+
+You can use Pipx or UV for installation
+```
+uv tool install git+https://github.com/dirkjanm/krbrelayx.git
+```
+## Uninstall
+```
+uv tool uninstall krbrelayx
+```
 # Tools included
 ## addspn.py
 This tool can add/remove/modify Service Principal Names on accounts in AD over LDAP.

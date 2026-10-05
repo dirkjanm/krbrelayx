@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "krbrelayx"
+version = "1.0.0"
+description = "Kerberos relaying and abuse toolkit — krbrelayx, addspn, dnstool, printerbug"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Dirk-jan Mollema" }]
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Security",
+    "Intended Audience :: Information Technology",
+]
+
+dependencies = [
+    "impacket>=0.10.0",
+    "ldap3",
+    "dnspython",
+]
+
+[project.urls]
+Homepage = "https://github.com/dirkjanm/krbrelayx"
+Repository = "https://github.com/dirkjanm/krbrelayx"
+
+[project.scripts]
+krbrelayx = "krbrelayx:main"
+addspn = "addspn:main"
+dnstool = "dnstool:main"
+printerbug = "printerbug:main"
+
+[tool.setuptools]
+py-modules = ["krbrelayx", "addspn", "dnstool", "printerbug"]
+
+[tool.setuptools.packages.find]
+include = ["lib*"]
