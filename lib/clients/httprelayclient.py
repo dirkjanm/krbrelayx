@@ -13,6 +13,7 @@
 # Author:
 #   Dirk-jan Mollema / Fox-IT (https://www.fox-it.com)
 #   Alberto Solino (@agsolino)
+#   Hugo VINCENT (@hugow)
 #
 import re
 import ssl
@@ -90,6 +91,7 @@ class HTTPRelayClient(ProtocolClient):
             return None, STATUS_ACCESS_DENIED
         else:
             LOG.info('HTTP server returned status code %d, treating as a successful login' % res.status)
+            LOG.debug('%s AP_REQ: %s', self.authenticationMethod, negotiate)
             #Cache this
             self.lastresult = res.read()
             return None, STATUS_SUCCESS
@@ -101,9 +103,16 @@ class HTTPRelayClient(ProtocolClient):
             self.session = None
 
     def keepAlive(self):
-        # Do a HEAD for favicon.ico
-        self.session.request('HEAD','/favicon.ico')
-        self.session.getresponse()
+        try:
+            # Do a HEAD for favicon.ico
+            self.session.request('GET', self.path)
+            res = self.session.getresponse()
+            res.read()
+        except Exception as e:
+            # If the socket is currently hijacked by our SOCKS proxy, 
+            # the http.client state machine will throw an error. 
+            # We safely ignore it so the background thread doesn't crash.
+            pass
 
 class HTTPSRelayClient(HTTPRelayClient):
     PLUGIN_NAME = "HTTPS"

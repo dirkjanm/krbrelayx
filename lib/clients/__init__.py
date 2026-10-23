@@ -8,6 +8,7 @@
 #
 # Author:
 #  Alberto Solino (@agsolino)
+#  Hugo VINCENT (@hugow)
 #
 # Description:
 #  Defines a base class for all clients + loads all available modules
@@ -17,6 +18,7 @@
 import os, sys
 from importlib.resources import files
 from impacket import LOG
+from threading import Lock
 
 PROTOCOL_CLIENTS = {}
 
@@ -25,6 +27,8 @@ PROTOCOL_CLIENTS = {}
 # writing a plugin for protocol clients:
 # PROTOCOL_CLIENT_CLASS = "<name of the class for the plugin>"
 # PLUGIN_NAME must be the protocol name that will be matched later with the relay targets (e.g. SMB, LDAP, etc)
+client_idx = 0
+lock = Lock()
 class ProtocolClient:
     PLUGIN_NAME = 'PROTOCOL'
     def __init__(self, serverConfig, target, targetPort, extendedSecurity=True):
@@ -76,6 +80,12 @@ class ProtocolClient:
     def keepAlive(self):
         # Charged of keeping connection alive
         raise RuntimeError('Virtual Function')
+
+    def setClientId(self):
+        with lock:
+            global client_idx
+            client_idx += 1
+            self.client_id = client_idx
 
 clients_dir = files('lib').joinpath('clients')
 for file in clients_dir.iterdir():

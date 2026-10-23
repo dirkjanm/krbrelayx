@@ -9,6 +9,7 @@
 # Authors:
 #  Alberto Solino (@agsolino)
 #  Dirk-jan Mollema / Fox-IT (https://www.fox-it.com)
+#  Hugo VINCENT (@hugow)
 #
 # Description:
 #             This is the SMB server which relays the connections
@@ -35,7 +36,7 @@ from impacket.nt_errors import STATUS_MORE_PROCESSING_REQUIRED, STATUS_ACCESS_DE
 from impacket.spnego import SPNEGO_NegTokenResp, SPNEGO_NegTokenInit
 from impacket.smbserver import SMBSERVER, outputToJohnFormat, writeJohnOutputToFile
 from impacket.spnego import ASN1_AID, ASN1_SUPPORTED_MECH
-from impacket.examples.ntlmrelayx.servers.socksserver import activeConnections
+from lib.servers.socksserver import activeConnections
 from impacket.examples.ntlmrelayx.utils.targetsutils import TargetsProcessor
 from impacket.smbserver import getFileTime
 from pyasn1.codec.der import decoder, encoder
@@ -575,6 +576,15 @@ class SMBRelayServer(Thread):
         sclass, host = authdata['service'].split('/')
         for target in self.config.target.originalTargets:
             parsed_target = target
+            if self.config.runSocks and parsed_target.scheme.upper() in self.config.socksServer.supportedSchemes:
+                if self.config.runSocks is True:
+                    client = self.config.protocolClients[target.scheme.upper()](self.config, parsed_target)
+                    client.initConnection(authdata, self.config.dcip)
+                    # Pass all the data to the socksplugins proxy
+                    activeConnections.put((parsed_target.hostname, client.targetPort, parsed_target.scheme.upper(),
+                                        self.authUser, client, client.sessionData))
+                    return
+
             if host.lower() in parsed_target.hostname.lower():
                 # Found a target with the same SPN
                 client = self.config.protocolClients[target.scheme.upper()](self.config, parsed_target)
