@@ -36,7 +36,7 @@ from impacket.krb5.kerberosv5 import getKerberosTGT, getKerberosTGS
 from impacket.krb5.types import Principal
 from impacket.krb5 import constants
 from ldap3 import NTLM, Server, Connection, ALL, LEVEL, BASE, MODIFY_DELETE, MODIFY_ADD, MODIFY_REPLACE, SASL, KERBEROS
-from lib.utils.kerberos import ldap_kerberos
+from ldap3_ad_auth import bind_kerberos, bind_ntlm
 import ldap3
 from ldap3.protocol.microsoft import security_descriptor_control
 
@@ -131,16 +131,18 @@ def main():
     # define the server and the connection
     s = Server(args.host, get_info=ALL)
     print_m('Connecting to host...')
-    c = Connection(s, user=args.user, password=args.password, authentication=authentication, sasl_mechanism=sasl_mech)
+    c = Connection(s, user=args.user, password=args.password, authentication=authentication, sasl_mechanism=sasl_mech, auto_referrals=False)
     print_m('Binding to host')
     # perform the Bind operation
     if authentication == NTLM:
-        if not c.bind():
+        try:
+            bind_ntlm(c, domain=domain, username=user, password=args.password)
+        except Exception:
             print_f('Could not bind with specified credentials')
             print_f(c.result)
             sys.exit(1)
     else:
-        ldap_kerberos(domain, kdcHost, None, userName, c, args.host, TGS)
+        bind_kerberos(c, domain=domain, kdc=kdcHost, username=user, hostname=args.host, tgs=TGS)
     print_o('Bind OK')
 
     if args.target:

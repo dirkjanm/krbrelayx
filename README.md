@@ -1,8 +1,9 @@
 # Krbrelayx - Kerberos relaying and unconstrained delegation abuse toolkit
 
 Toolkit for abusing Kerberos.
-Requires [impacket](https://github.com/SecureAuthCorp/impacket), [ldap3](https://github.com/cannatag/ldap3) and dnspython to function.
-It is recommended to install impacket from git directly to have the latest version available.
+Requires [impacket](https://github.com/SecureAuthCorp/impacket), [ldap3](https://github.com/cannatag/ldap3), [ldap3-ad-auth](https://github.com/dirkjanm/ldap3-ad-auth) and dnspython to function. 
+
+Requirements can be installed with `pip install -r requirements.txt`
 
 More info about this toolkit available in my blog <https://dirkjanm.io/krbrelayx-unconstrained-delegation-abuse-toolkit/>. Information about Kerberos relaying in the follow-up blog <https://dirkjanm.io/relaying-kerberos-over-dns-with-krbrelayx-and-mitm6/>.
 
